@@ -234,6 +234,7 @@ const _origRender = render;
 render = function () { if (window.__afterDelete) { const h = window.__afterDelete; window.__afterDelete = null; if (!DB.get(parseHash().params.sub || 'sales', parseHash().params.id)) { location.hash = h; return; } } _origRender(); };
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
 
+if (!(window.dalalaDesktop && window.dalalaDesktop.licensed)) { try { window.stop(); } catch (e) {} document.documentElement.innerHTML = '<head><meta charset="utf-8"><title>Dalala</title></head><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e2e8f0;font-family:Segoe UI,Tahoma,sans-serif;text-align:center;padding:20px"><div><div style="font-size:54px">🔒</div><h2 style="margin:10px 0">هذه النسخة تعمل فقط من خلال البرنامج المرخّص</h2><p style="color:#94a3b8">This copy only runs inside the licensed Dalala application.</p></div></body>'; throw new Error('unlicensed'); }
 DB.load();
 restoreSession();
 render();
