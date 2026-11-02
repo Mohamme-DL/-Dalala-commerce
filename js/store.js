@@ -3,15 +3,15 @@
 
 const DB_KEY = 'dalala_commerce_db_v1';
 const COLS = ['products', 'categories', 'customers', 'suppliers', 'sales', 'purchases', 'receipts', 'disbursements',
-  'expenses', 'cashMoves', 'adjustments', 'users'];
+  'expenses', 'cashMoves', 'adjustments', 'users', 'held', 'stockCounts'];
 
 const DB = {
   d: null, v: 0,
   load() {
     try { this.d = JSON.parse(localStorage.getItem(DB_KEY)); } catch (e) { this.d = null; }
-    if (!this.d || !this.d.version) { this.d = seedData(); this.save(); }
-    COLS.forEach(c => { this.d[c] = this.d[c] || []; });
-    this.d.settings = Object.assign(defaultSettings(), this.d.settings || {});
+    this.fresh = false;
+    if (!this.d || !this.d.version) { this.d = emptyData(); this.fresh = true; } // first run: setup screen decides (new business or demo)
+    this.normalize();
     this.v++;
   },
   save() {
@@ -28,7 +28,9 @@ const DB = {
     const n = Math.max(0, ...this.d[c].filter(r => String(r[field] || '').startsWith(prefix + '-')).map(r => parseInt(String(r[field]).slice(prefix.length + 1), 10) || 0));
     return `${prefix}-${String(n + 1).padStart(6, '0')}`;
   },
-  reset() { this.d = seedData(); this.save(); },
+  normalize() { COLS.forEach(c => { this.d[c] = this.d[c] || []; }); this.d.settings = Object.assign(defaultSettings(), this.d.settings || {}); },
+  reset() { this.d = seedData(); this.normalize(); this.fresh = false; this.save(); },
+  startEmpty(extra = {}) { this.d = emptyData(); Object.assign(this.d.settings, extra, { isDemo: false, openingCash: 0, openingBank: 0 }); this.fresh = false; this.save(); },
   wipe() {
     const settings = this.d.settings; const admin = this.d.users.find(u => u.role === 'admin');
     this.d = { version: 1, settings };
@@ -38,6 +40,12 @@ const DB = {
     this.save();
   },
 };
+
+function emptyData() {
+  const d = { version: 1, settings: defaultSettings() }; COLS.forEach(c => { d[c] = []; });
+  d.categories = [{ id: uid(), name: 'عام', nameEn: 'General' }];
+  return d;
+}
 
 function defaultSettings() {
   return {
@@ -101,7 +109,8 @@ function seedData() {
     // purchases every 7 days per supplier group to restock
     if (k % 7 === 3) {
       Object.entries(supFor).forEach(([cid, sup]) => {
-        const items = products.filter(p => p.categoryId === cid && isStock(p) && stock[p.id] < p.openingQty * 0.7).map(p => ({ productId: p.id, qty: Math.round(p.openingQty * 0.6), price: p.cost, discount: 0 }));
+        const items = products.filter(p => p.categoryId === cid && isStock(p) && stock[p.id] < p.openingQty * 0.7).map(p => ({ productId: p.id, qty: Math.round(p.openingQty * 0.6), price: p.cost, discount: 0,
+          ...([C.food, C.drink, C.care].includes(cid) ? { expiry: addDays(date, cid === C.drink ? 40 : cid === C.care ? 400 : 240) } : {}) }));
         if (!items.length) return;
         items.forEach(it => { stock[it.productId] += it.qty; });
         const total = sum(items, it => it.qty * it.price); const paid = rnd() < 0.6 ? total : r3(total * 0.5);
@@ -149,5 +158,6 @@ function seedData() {
     { id: id(), username: 'accountant', password: 'acc123', name: 'سعاد المحاسبة', nameEn: 'Suad (Accountant)', role: 'accountant', active: true },
     { id: id(), username: 'store', password: 'store123', name: 'خالد أمين المخزن', nameEn: 'Khalid (Storekeeper)', role: 'storekeeper', active: true },
   ];
+  settings.isDemo = true;
   return { version: 1, settings, categories: cats, products, customers: cust, suppliers: sups, sales, purchases, receipts, disbursements, expenses, cashMoves, adjustments, users };
 }

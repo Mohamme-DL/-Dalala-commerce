@@ -24,6 +24,7 @@ function cellText(f, r) {
     case 'select': return v === '' || v == null ? '—' : (f.optLabel ? f.optLabel(v) : t('opt_' + v));
     case 'ref': return v ? refLabel(f.ref, v) : '—';
     case 'multiref': return (v || []).map(x => refLabel(f.ref, x)).join('، ');
+    case 'multiselect': return (v || []).map(x => (f.optLabel ? f.optLabel(x) : t('opt_' + x))).join('، ');
     case 'date': return v ? fmtDate(v) : '—';
     case 'bool': return v ? t('yes') : t('no');
     default: return v === '' || v == null ? '—' : String(v);
@@ -70,7 +71,7 @@ function renderCrud(key, { title, embedded } = {}) {
   }).join('');
   const tools = (cfg.tools || []).filter(tl => can(tl.roles)).map((tl, i) => `<button class="btn ghost" data-act="crud-tool" data-key="${key}" data-i="${i}">${icon(tl.icon)}<span>${t(tl.label)}</span></button>`).join('');
   return `${embedded ? '' : pageHead(title || t('nav_' + key), t('sub_' + key), `
-      <button class="btn ghost" data-act="crud-export" data-key="${key}">${icon('download')}<span>${t('export')}</span></button>${tools}
+      <button class="btn ghost" data-act="crud-print" data-key="${key}">${icon('printer')}<span>${t('print')}</span></button><button class="btn ghost" data-act="crud-export" data-key="${key}">${icon('download')}<span>${t('export')}</span></button>${tools}
       ${editable ? `<button class="btn primary" data-act="crud-add" data-key="${key}">${icon('plus')}<span>${t('add')}</span></button>` : ''}`)}
     <div class="card">
       <div class="toolbar">
@@ -122,6 +123,7 @@ function inputHtml(f, v, rec) {
     case 'textarea': return `<textarea class="input" rows="3" ${name} ${req} ${dir}>${esc(v)}</textarea>`;
     case 'select': return `<select class="input" ${name} ${req}><option value="">—</option>${fieldOpts(f).map(o => `<option value="${esc(o.v)}" ${String(v) === String(o.v) ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select>`;
     case 'ref': return `<select class="input" ${name} ${req}><option value="">—</option>${refOptions(f, v).map(o => `<option value="${esc(o.v)}" ${v === o.v ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select>`;
+    case 'multiselect': return `<div class="days">${fieldOpts(f).map(o => `<label class="day"><input type="checkbox" name="${f.k}" value="${esc(o.v)}" ${(v || []).includes(o.v) ? 'checked' : ''}><span>${esc(o.l)}</span></label>`).join('')}</div>${f.hint ? `<small class="hint">${t(f.hint)}</small>` : ''}`;
     case 'multiref': return `<select class="input" ${name} multiple size="6">${refOptions(f, v || []).map(o => `<option value="${esc(o.v)}" ${(v || []).includes(o.v) ? 'selected' : ''}>${esc(o.l)}</option>`).join('')}</select><small class="hint">${t('multiHint')}</small>`;
     case 'bool': return `<label class="switch"><input type="checkbox" ${name} ${v ? 'checked' : ''}><span></span></label>`;
     case 'number': return `<input class="input" type="number" step="any" ${f.signed ? '' : 'min="0"'} ${name} value="${esc(v)}" ${req} dir="ltr">`;
@@ -150,12 +152,15 @@ function openForm(key, id, preset = {}) {
   const form = $('#mform', root);
   $('[data-cancel]', root).onclick = closeModal;
   if (cfg.onChange) form.addEventListener('change', e => cfg.onChange(form, e.target.name));
+  // barcode scanners send Enter after the code: move to the next field instead of saving the form
+  form.addEventListener('keydown', e => { if (e.key !== 'Enter' || e.target.tagName === 'TEXTAREA' || e.target.type === 'submit') return; e.preventDefault();
+    const els = [...form.querySelectorAll('input:not([type=hidden]):not([readonly]), select, textarea')]; const i = els.indexOf(e.target); if (i >= 0 && els[i + 1]) els[i + 1].focus(); });
   form.addEventListener('submit', e => {
     e.preventDefault();
     const out = {}; let err = null;
     for (const f of fields) {
       const el = form.elements[f.k];
-      let v = f.type === 'bool' ? el.checked : f.type === 'multiref' ? [...el.selectedOptions].map(o => o.value) : el.value.trim();
+      let v = f.type === 'bool' ? el.checked : f.type === 'multiref' ? [...el.selectedOptions].map(o => o.value) : f.type === 'multiselect' ? [...form.querySelectorAll(`input[name="${f.k}"]:checked`)].map(o => o.value) : el.value.trim();
       if (f.type === 'number' || f.num) v = v === '' ? '' : Number(v);
       if (f.req && (v === '' || v == null)) { err = `${t('errRequired')}: ${fieldLabel(f)}`; el.focus(); break; }
       if (f.unique && v !== '' && DB.all(key).some(r => r.id !== id && String(r[f.k]).toLowerCase() === String(v).toLowerCase())) { err = `${t('errUnique')}: ${fieldLabel(f)}`; el.focus(); break; }
@@ -168,6 +173,7 @@ function openForm(key, id, preset = {}) {
     if (old) saved = DB.update(key, id, out); else saved = DB.insert(key, { ...preset, ...out });
     closeModal(); toast(t('saved')); render();
     if (cfg.afterSave) cfg.afterSave(saved, !old);
+    if (window.__onSaved) { const cb = window.__onSaved; window.__onSaved = null; cb(saved, key); }
   });
 }
 

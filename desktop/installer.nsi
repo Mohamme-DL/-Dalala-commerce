@@ -8,7 +8,7 @@ SetCompressor /SOLID lzma
 !define APPNAME     "Dalala Commerce"
 !define APPNAME_AR  "منظومة دلالة التجارية"
 !ifndef VERSION
-  !define VERSION   "1.2.0"
+  !define VERSION   "2.0.0"
 !endif
 !define EXE         "Dalala Commerce.exe"
 !define UNINST_KEY  "Software\Microsoft\Windows\CurrentVersion\Uninstall\DalalaCommerce"

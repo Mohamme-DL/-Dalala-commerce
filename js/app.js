@@ -24,6 +24,9 @@ const MENU = [
     { id: 'products', icon: 'box', roles: ALL },
     { id: 'categories', icon: 'tag', roles: ['admin', 'storekeeper'] },
     { id: 'adjustments', icon: 'scale', roles: ['admin', 'storekeeper'] },
+    { id: 'stockcount', icon: 'clipboard', roles: ['admin', 'storekeeper'] },
+    { id: 'expiry', icon: 'clock', roles: ['admin', 'storekeeper', 'accountant'] },
+    { id: 'labels', icon: 'barcode', roles: ['admin', 'storekeeper'] },
   ] },
   { g: 'g_finance', items: [
     { id: 'treasury', icon: 'vault', roles: ['admin', 'accountant'] },
@@ -35,7 +38,7 @@ const MENU = [
     { id: 'settings', icon: 'settings', roles: ['admin'] },
   ] },
 ];
-const PAGES = { dashboard: renderDashboard, pos: renderPOS, doc: renderDoc, statement: renderStatement, item: renderItem, treasury: renderTreasury, reports: renderReports, messages: renderMessages, settings: renderSettings };
+const PAGES = { dashboard: renderDashboard, pos: renderPOS, doc: renderDoc, statement: renderStatement, item: renderItem, treasury: renderTreasury, reports: renderReports, messages: renderMessages, expiry: renderExpiry, stockcount: renderStockCount, labels: renderLabels, settings: renderSettings };
 const PAGE_ROLES = { doc: ['admin', 'cashier', 'accountant', 'storekeeper'], statement: ['admin', 'cashier', 'accountant', 'storekeeper'], item: ALL };
 function pageRoles(id) { if (PAGE_ROLES[id]) return PAGE_ROLES[id]; for (const g of MENU) for (const i of g.items) if (i.id === id) return i.roles; return null; }
 const homePage = () => (USER.role === 'cashier' ? 'pos' : 'dashboard');
@@ -57,6 +60,7 @@ function applyPrefs() {
   let theme = null; try { theme = localStorage.getItem('dalala_theme'); } catch (e) { /* ignore */ }
   if (theme) document.documentElement.dataset.theme = theme; else delete document.documentElement.dataset.theme;
   document.title = `${t('appName')} — ${loc(S(), 'businessName')}`;
+  const ac = S().accent; const rs = document.documentElement.style; if (ac) { rs.setProperty('--primary', ac); rs.setProperty('--primary-2', ac); rs.setProperty('--primary-soft', `color-mix(in srgb, ${ac} 12%, transparent)`); } else { ['--primary', '--primary-2', '--primary-soft'].forEach(v => rs.removeProperty(v)); }
 }
 function isDark() { const th = document.documentElement.dataset.theme; return th ? th === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches; }
 function setLang(l) { LANG = l; try { localStorage.setItem('dalala_lang', l); } catch (e) { /* ignore */ } applyPrefs(); render(); }
@@ -64,13 +68,8 @@ function setLang(l) { LANG = l; try { localStorage.setItem('dalala_lang', l); } 
 /* ---------- auth ---------- */
 const SESSION_KEY = 'dalala_commerce_session';
 function restoreSession() { let id = null; try { id = localStorage.getItem(SESSION_KEY); } catch (e) { /* ignore */ } USER = id ? DB.all('users').find(u => u.id === id && u.active !== false) || null : null; }
-function login(username, password) {
-  const u = DB.all('users').find(x => x.username.toLowerCase() === username.trim().toLowerCase() && x.password === password && x.active !== false);
-  if (!u) return false;
-  USER = u; try { localStorage.setItem(SESSION_KEY, u.id); } catch (e) { /* ignore */ }
-  location.hash = '#/' + homePage(); render(); return true;
-}
-function logout() { USER = null; try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* ignore */ } location.hash = ''; render(); }
+function login(username, password) { return loginAsync(username, password); }
+function logout() { USER = null; LOCKED = false; $('#lock-screen')?.remove(); try { localStorage.removeItem(SESSION_KEY); } catch (e) { /* ignore */ } location.hash = ''; render(); }
 
 function renderLogin() {
   const demos = [['admin', 'admin123', 'role_admin', 'shield'], ['cashier', 'cashier123', 'role_cashier', 'cart'], ['accountant', 'acc123', 'role_accountant', 'wallet'], ['store', 'store123', 'role_storekeeper', 'box']];
@@ -83,12 +82,12 @@ function renderLogin() {
       <form id="login-form" class="lf-box"><div class="lf-logo">${LOGO}<div><b>${t('appName')}</b><small>${esc(loc(S(), 'businessName'))}</small></div></div>
         <h2>${t('signIn')}</h2><p class="muted">${t('signInSub')}</p>
         <label class="field"><span>${t('username')}</span><input class="input" name="u" autocomplete="username" dir="ltr" required></label>
-        <label class="field"><span>${t('password')}</span><input class="input" name="p" type="password" autocomplete="current-password" dir="ltr" required></label>
+        ${pwField('p', t('password'), 'autocomplete="current-password" required')}
         <div class="form-err" hidden>${t('loginError')}</div>
         <button class="btn primary block" type="submit">${t('signIn')}</button>
-        <div class="demo"><span>${t('demoAccounts')}</span><div>${demos.map(([u, p, r, ic]) => `<button type="button" class="demo-b" data-act="demo-login" data-u="${u}" data-p="${p}">${icon(ic)}<span>${t(r)}</span></button>`).join('')}</div></div>
+        ${S().isDemo ? `<div class="demo"><span>${t('demoAccounts')}</span><div>${demos.map(([u, p, r, ic]) => `<button type="button" class="demo-b" data-act="demo-login" data-u="${u}" data-p="${p}">${icon(ic)}<span>${t(r)}</span></button>`).join('')}</div></div>` : ''}
       </form><p class="foot">© ${new Date().getFullYear()} ${t('appName')}</p></div></div>`;
-  $('#login-form').addEventListener('submit', e => { e.preventDefault(); if (!login(e.target.u.value, e.target.p.value)) $('.form-err', e.target).hidden = false; });
+  $('#login-form').addEventListener('submit', async e => { e.preventDefault(); const r = await loginAsync(e.target.u.value, e.target.p.value); if (!r.ok) { const b = $('.form-err', e.target); b.hidden = false; b.textContent = r.msg; } });
 }
 
 /* ---------- layout ---------- */
@@ -108,12 +107,13 @@ function topbar(page, params) {
     <button class="btn ghost sm" data-act="lang" title="Language">${icon('globe')}<span>${LANG === 'ar' ? 'EN' : 'ع'}</span></button>
     <button class="icon-btn" data-act="theme" title="${t('theme')}">${icon(isDark() ? 'sun' : 'moon')}</button>
     <div class="user-menu"><button class="user-b" data-act="user-menu">${avatar(USER)}<div><b>${esc(loc(USER))}</b><small>${t('role_' + USER.role)}</small></div></button>
-      <div class="dropdown" hidden><button data-act="chpass">${icon('key')}<span>${t('changePassword')}</span></button><button data-act="logout" class="danger-t">${icon('logout')}<span>${t('logout')}</span></button></div></div>
+      <div class="dropdown" hidden><button data-act="lock">${icon('key')}<span>${t('lockNow')} <kbd>Ctrl+L</kbd></span></button><button data-act="chpass">${icon('key')}<span>${t('changePassword')}</span></button><button data-act="logout" class="danger-t">${icon('logout')}<span>${t('logout')}</span></button></div></div>
   </header>`;
 }
 
 function render() {
   applyPrefs();
+  if (DB.fresh) { renderSetup(); return; }
   if (!USER) { renderLogin(); return; }
   let { page, params } = parseHash();
   const roles = pageRoles(page);
@@ -139,12 +139,12 @@ const ACT = {
   chpass: () => {
     const root = modal({ title: t('changePassword'), size: 'sm',
       body: `<form id="pform" class="form-grid one"><label class="field"><span>${t('currentPassword')}</span><input class="input" type="password" name="o" required dir="ltr"></label>
-        <label class="field"><span>${t('newPassword')}</span><input class="input" type="password" name="n" minlength="6" required dir="ltr"></label><div class="form-err" hidden></div></form>`,
+        <label class="field"><span>${t('newPassword')}</span><input class="input" type="password" name="n" minlength="8" required dir="ltr"></label><div class="form-err" hidden></div></form>`,
       footer: `<button class="btn primary" type="submit" form="pform">${t('save')}</button>` });
-    $('#pform', root).addEventListener('submit', e => { e.preventDefault(); const f = e.target; const b = $('.form-err', f);
-      if (f.o.value !== USER.password) { b.hidden = false; b.textContent = t('wrongPassword'); return; }
-      if (f.n.value.length < 6) { b.hidden = false; b.textContent = t('passwordShort'); return; }
-      DB.update('users', USER.id, { password: f.n.value }); closeModal(); toast(t('saved')); });
+    $('#pform', root).addEventListener('submit', async e => { e.preventDefault(); const f = e.target; const b = $('.form-err', f);
+      if (!(await checkPassword(USER, f.o.value))) { b.hidden = false; b.textContent = t('wrongPassword'); return; }
+      if (f.n.value.length < 8) { b.hidden = false; b.textContent = t('passwordShort8'); return; }
+      DB.update('users', USER.id, { password: await hashPassword(f.n.value) }); closeModal(); toast(t('saved')); });
   },
   'quick-add': el => openForm(el.dataset.key, null, el.dataset.preset ? JSON.parse(el.dataset.preset) : {}),
   'new-purchase': () => docEditor('purchases'),
@@ -175,8 +175,8 @@ const ACT = {
   'treasury-export': el => { let b = 0; exportCSV(`treasury-${el.dataset.acc}`, [t('f_date'), t('ref'), t('f_description'), t('in'), t('out'), t('f_balance')], moneyMoves().filter(m => m.account === el.dataset.acc).map(m => { b = round(b + m.amount); return [m.date, m.ref, m.desc, m.amount > 0 ? m.amount : '', m.amount < 0 ? -m.amount : '', b]; })); },
   'rep-export': el => reportExport(el),
   'settings-save': () => {
-    const f = $('#settings-form'); const st = S(); const num = ['decimals', 'taxRate', 'openingCash', 'openingBank'];
-    ['businessName', 'businessNameEn', 'activity', 'activityEn', 'address', 'addressEn', 'phone', 'email', 'municipality', 'crNo', 'taxNo', 'chamberNo', 'licenseNo', 'currency', 'currencyEn', 'receiptSize', 'receiptFooter', 'receiptFooterEn', 'printLang', ...num]
+    const f = $('#settings-form'); const st = S(); const num = ['decimals', 'taxRate', 'openingCash', 'openingBank', 'autoLockMin', 'expiryAlertDays'];
+    ['businessName', 'businessNameEn', 'activity', 'activityEn', 'address', 'addressEn', 'phone', 'email', 'municipality', 'crNo', 'taxNo', 'chamberNo', 'licenseNo', 'currency', 'currencyEn', 'accent', 'receiptSize', 'receiptFooter', 'receiptFooterEn', 'printLang', ...num]
       .forEach(k => { if (f.elements[k]) st[k] = num.includes(k) ? Number(f.elements[k].value) || 0 : f.elements[k].value.trim(); });
     st.decimals = Math.max(0, Math.min(3, Math.round(st.decimals)));
     st.allowNegativeStock = f.elements.allowNegativeStock.checked;
@@ -186,6 +186,25 @@ const ACT = {
   'reset-demo': () => confirmBox(t('resetConfirm'), () => { DB.reset(); restoreSession(); if (!USER) { logout(); return; } toast(t('done')); render(); }),
   wipe: () => confirmBox(t('wipeConfirm'), () => { DB.wipe(); restoreSession(); if (!USER) { logout(); return; } toast(t('done')); render(); }),
 };
+Object.assign(ACT, {
+  'pw-eye': el => { const i = el.parentElement.querySelector('input'); i.type = i.type === 'password' ? 'text' : 'password'; },
+  'setup-demo': () => { DB.reset(); USER = null; render(); },
+  'switch-user': () => unlockSwitchUser(), lock: () => lockScreen(),
+  'pos-hold': () => posHold(), 'pos-held': () => posHeldList(),
+  'pos-newcust': () => { window.__onSaved = (r, key) => { if (key === 'customers') { POS.customerId = r.id; refreshPOS(false); } }; openForm('customers'); },
+  'doc-edit': el => startEdit(el.dataset.kind, DB.get(el.dataset.kind, el.dataset.id)),
+  'count-start': () => countStart(), 'count-post': () => countPost(), 'count-print': el => countPrint(el.dataset.id),
+  'count-cancel': () => confirmBox(t('countCancelQ'), () => { DB.remove('stockCounts', openCount().id); render(); }),
+  'exp-writeoff': el => writeOffExpired(el.dataset.id),
+  'lbl-print': () => labelsPrint(), 'lbl-none': () => { LBL.sel = {}; render(); },
+  'lbl-all': () => { const q = norm(LBL.q); DB.all('products').filter(p => p.active !== false && isStock(p) && (!q || norm(loc(p)).includes(q) || String(p.code).toLowerCase().includes(q) || String(p.barcode || '').includes(q))).forEach(p => { LBL.sel[p.id] = LBL.sel[p.id] || 1; }); render(); },
+  'day-open': el => dayOpen(el.dataset.date),
+  'crud-print': el => printCrud(el.dataset.key),
+  'crud-print-html': el => printHTML(`${printHeader(el.dataset.title)}${($(el.dataset.target)?.innerHTML || '').replace(/<button[\s\S]*?<\/button>/g, '').replace('class="table compact"', 'class="ptable small"')}`),
+  'new-year': () => newYearDialog(),
+  'accent-reset': () => { delete S().accent; DB.save(); render(); },
+  'settings-sec-save': () => { const st = S(); st.autoLockMin = Math.max(0, +$('#set-autolock').value || 0); st.expiryAlertDays = Math.max(1, +$('#set-expdays').value || 30); st.accent = $('#set-accent').value; DB.save(); toast(t('saved')); render(); },
+});
 Object.assign(ACT, ACT_EXTRA, { 'wa-customer': el => waCustomerCompose(el.dataset.id), 'wa-doc': el => waDocCompose(el.dataset.id) });
 const CHG = {
   'crud-filter': el => { const st = crudState(el.dataset.key); st.f[el.dataset.f] = el.value; st.page = 1; if (el.dataset.f === 'period' && parseHash().params.period) { location.hash = '#/' + el.dataset.key; return; } render(); },
@@ -194,8 +213,9 @@ const CHG = {
   'pos-customer': el => { POS.customerId = el.value; refreshPOS(false); },
   'pos-setqty': el => { const it = POS.items[+el.dataset.i]; const v = +el.value; const p = DB.get('products', it.productId);
     if (!(v > 0)) POS.items.splice(+el.dataset.i, 1);
-    else if (isStock(p) && !S().allowNegativeStock && v > stockOf(p.id)) toast(`${t('errNoStock')}: ${loc(p)} (${fmtNum(stockOf(p.id), 3)})`, 'err');
+    else if (stockProblem(p, v)) toast(stockProblem(p, v), 'err');
     else it.qty = round(v); refreshPOS(false); },
+  'pos-price': el => { const it = POS.items[+el.dataset.i]; if (it && hasPerm('changePrice')) it.price = Math.max(0, +el.value || 0); refreshPOS(false); },
   'pos-discount': el => { POS.discount = Math.max(0, +el.value || 0); refreshPOS(false); },
   'pos-paid': el => { POS.paid = el.value === '' ? '' : Math.max(0, +el.value || 0); refreshPOS(false); },
   restore: el => {
@@ -207,6 +227,11 @@ const CHG = {
     rd.readAsText(file);
   },
 };
+Object.assign(CHG, {
+  'count-set': el => { const c = openCount(); if (!c) return; c.lines[el.dataset.id].counted = el.value === '' ? '' : Math.max(0, +el.value); DB.save(); const y = window.scrollY; render(); window.scrollTo(0, y); },
+  'lbl-q': el => { LBL.q = el.value; render(); }, 'lbl-n': el => { LBL.sel[el.dataset.id] = Math.max(0, Math.floor(+el.value || 0)); render(); },
+  'lbl-opt': el => { const k = el.dataset.k; LBL[k] = el.type === 'checkbox' ? el.checked : (['w', 'h'].includes(k) ? Math.max(10, +el.value || 0) : el.value); render(); },
+});
 let searchTimer;
 const INP = {
   'crud-search': el => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { const st = crudState(el.dataset.key); st.q = el.value; st.page = 1; refreshCrud(el.dataset.key); }, 150); },
@@ -224,7 +249,15 @@ document.addEventListener('click', e => {
 document.addEventListener('change', e => { const el = e.target.closest('[data-chg]'); if (el && CHG[el.dataset.chg]) CHG[el.dataset.chg](el); });
 document.addEventListener('input', e => { const el = e.target.closest('[data-inp]'); if (el && INP[el.dataset.inp]) INP[el.dataset.inp](el); });
 document.addEventListener('keydown', e => {
-  if (!USER || parseHash().page !== 'pos' || $('#modal-root.open')) return;
+  if (!USER || LOCKED) return;
+  const ctrl = e.ctrlKey || e.metaKey;
+  if (ctrl && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); lockScreen(); return; }
+  if (e.key === 'F11') { e.preventDefault(); if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); return; }
+  if (e.key === 'F5') { e.preventDefault(); DB.load(); restoreSession(); render(); return; }
+  if (e.key === 'F2' && parseHash().page !== 'pos' && can(['admin', 'cashier'])) { e.preventDefault(); location.hash = '#/pos'; return; }
+  if (parseHash().page !== 'pos' || $('#modal-root.open')) return;
+  if (e.key === 'F8') { e.preventDefault(); posHold(); return; }
+  if (e.key === 'F4') { e.preventDefault(); posHeldList(); return; }
   if (e.key === 'F2') { e.preventDefault(); $('#pos-q')?.focus(); }
   else if (e.key === 'F9') { e.preventDefault(); posPay(); }
   else if (e.key === 'Enter' && e.target.id === 'pos-q') { e.preventDefault(); posScan(e.target.value); }

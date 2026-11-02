@@ -29,8 +29,9 @@ function renderDashboard() {
     { ic: 'arrowDown', l: t('totalReceivable'), v: moneyText(receivable), href: '#/customers' },
     { ic: 'arrowUp', l: t('totalPayable'), v: moneyText(payable), href: '#/suppliers' },
     { ic: 'alert', l: t('lowStockCount'), v: fmtNum(low.length), href: '#/products' },
-    { ic: 'box', l: t('nav_products'), v: fmtNum(DB.all('products').length), href: '#/products' },
-    { ic: 'users', l: t('nav_customers'), v: fmtNum(DB.all('customers').length), href: '#/customers' },
+    ...(() => { const ex = expiryRows(); const e = ex.filter(r => r.state === 'expired').length, so = ex.filter(r => r.state === 'soon').length;
+      return ex.length ? [{ ic: 'clock', l: t('exp_expired'), v: fmtNum(e), href: '#/expiry?state=expired', cls: e ? 'warn' : '' }, { ic: 'clock', l: t('exp_soon'), v: fmtNum(so), href: '#/expiry?state=soon' }]
+        : [{ ic: 'box', l: t('nav_products'), v: fmtNum(DB.all('products').length), href: '#/products' }, { ic: 'users', l: t('nav_customers'), v: fmtNum(DB.all('customers').length), href: '#/customers' }]; })(),
     { ic: 'truck', l: t('purchasesMonth'), v: moneyText(sum(DB.all('purchases').filter(d => d.date >= mf), d => sign(d) * docTotal(d))), href: '#/purchases' },
   ];
   const days = range(0, 13).map(i => addDays(T, i - 13));
@@ -49,7 +50,7 @@ function renderDashboard() {
   return `<div class="hero"><div><h1>${t(hour < 12 ? 'goodMorning' : 'goodEvening')}${t('comma')} ${esc(loc(USER))} 👋</h1><p>${fmtDate(T, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} · ${esc(loc(S(), 'businessName'))}</p></div>
       <div class="quick">${quick.map(q => q.href ? `<a class="qbtn" href="${q.href}">${icon(q.ic)}<span>${q.l}</span></a>` : `<button class="qbtn" data-act="${q.act}" data-key="${q.key || ''}">${icon(q.ic)}<span>${q.l}</span></button>`).join('')}</div></div>
     <div class="kpis">${kpis.map(kpi).join('')}</div>
-    <div class="minis">${minis.map(m => `<a class="mini" href="${m.href}">${icon(m.ic)}<b>${m.v}</b><span>${m.l}</span></a>`).join('')}</div>
+    <div class="minis">${minis.map(m => `<a class="mini ${m.cls || ''}" href="${m.href}">${icon(m.ic)}<b>${m.v}</b><span>${m.l}</span></a>`).join('')}</div>
     <div class="grid-3">${card(t('salesLast14'), barChart(trend), `<a class="link" href="#/reports">${t('viewAll')}</a>`, 'span-2')}${card(t('salesByCategoryMonth'), catItems.length ? donut(catItems, { center: fmtNum(net(month) / 1000, 1) + 'k', sub: curLabel() }) : emptyState(t('noData')))}</div>
     <div class="grid-2">
       ${card(t('latestInvoices'), latest.length ? `<ul class="list">${latest.map(d => `<li>${badge(d.type)}<div><a class="link ltr" href="#/doc/sales/${d.id}">${esc(d.number)}</a><small>${fmtDate(d.date)} · ${esc(partyName('customers', d.customerId))}</small></div><b>${fmtMoney(docTotal(d))}</b></li>`).join('')}</ul>` : emptyState(t('noData')), `<a class="link" href="#/sales">${t('viewAll')}</a>`)}
@@ -87,15 +88,17 @@ function posCart() {
   const paid = POS.paid === '' ? (POS.method === 'credit' ? 0 : tt.total) : +POS.paid;
   const change = round(paid - tt.total);
   return `<div class="cart-head"><label class="sel grow"><span>${icon('user')}</span><select class="input sm grow" data-chg="pos-customer"><option value="">${t('walkIn')}</option>${DB.all('customers').filter(c => c.active !== false).map(c => `<option value="${c.id}" ${POS.customerId === c.id ? 'selected' : ''}>${esc(loc(c))}</option>`).join('')}</select></label>
-      ${POS.items.length ? `<button class="icon-btn danger" data-act="pos-clear" title="${t('clear')}">${icon('trash')}</button>` : ''}</div>
+      <button class="icon-btn" data-act="pos-newcust" title="${t('newCustomer')}">${icon('userPlus')}</button>
+      <button class="icon-btn held-b" data-act="pos-held" title="${t('heldInvoices')} (F4)">${icon('clock')}${DB.all('held').length ? `<em class="nb">${DB.all('held').length}</em>` : ''}</button>
+      ${POS.items.length ? `<button class="icon-btn" data-act="pos-hold" title="${t('holdInvoice')} (F8)">${icon('minus')}</button><button class="icon-btn danger" data-act="pos-clear" title="${t('clear')}">${icon('trash')}</button>` : ''}</div>
     ${cust ? `<div class="cust-bal">${t('f_balance')}: ${balanceFmt(customerBalance(cust.id), 'c')}${+cust.creditLimit ? ` · ${t('f_creditLimit')}: ${fmtMoney(cust.creditLimit)}` : ''}</div>` : ''}
     <div class="cart-lines">${POS.items.length ? POS.items.map((it, i) => `<div class="cl">
-        <div class="cl-name"><b>${esc(prodName(it.productId))}</b><small>${fmtMoney(it.price)} × ${fmtNum(it.qty, 3)}</small></div>
+        <div class="cl-name"><b>${esc(prodName(it.productId))}</b>${hasPerm('changePrice') ? `<small><input class="input xs" type="number" step="any" min="0" value="${it.price}" data-chg="pos-price" data-i="${i}" title="${t('f_price')}"> × ${fmtNum(it.qty, 3)}</small>` : `<small>${fmtMoney(it.price)} × ${fmtNum(it.qty, 3)}</small>`}</div>
         <div class="qty"><button data-act="pos-qty" data-i="${i}" data-d="-1">${icon('minus')}</button><input class="input" type="number" step="any" min="0" value="${it.qty}" data-chg="pos-setqty" data-i="${i}"><button data-act="pos-qty" data-i="${i}" data-d="1">${icon('plus')}</button></div>
         <b class="cl-total">${money(lineTotal(it))}</b><button class="icon-btn danger" data-act="pos-del" data-i="${i}">${icon('x')}</button></div>`).join('') : emptyState(t('cartEmpty'), 'cart')}</div>
     <div class="cart-foot">
       <div class="trow"><span>${t('subtotal')}</span><b>${fmtMoney(tt.sub)}</b></div>
-      <div class="trow"><span>${t('f_discount')}</span><input class="input sm" type="number" step="any" min="0" value="${POS.discount || ''}" placeholder="0" data-chg="pos-discount" dir="ltr"></div>
+      <div class="trow"><span>${t('f_discount')}</span><input class="input sm" type="number" step="any" min="0" value="${POS.discount || ''}" placeholder="0" data-chg="pos-discount" dir="ltr" ${hasPerm('discount') ? '' : 'disabled title="' + t('noPermission') + '"'}></div>
       ${+S().taxRate ? `<div class="trow"><span>${t('tax')} (${fmtNum(S().taxRate, 2)}%)</span><b>${fmtMoney(tt.tax)}</b></div>` : ''}
       <div class="trow total"><span>${t('total')}</span><b>${fmtMoney(tt.total)}</b></div>
       <div class="seg methods">${[...METHODS.filter(m => m !== 'cheque'), 'credit'].map(m => `<button class="seg-m ${POS.method === m ? 'on' : ''}" data-act="pos-method" data-m="${m}">${t('opt_' + m)}</button>`).join('')}</div>
@@ -105,11 +108,18 @@ function posCart() {
     </div>`;
 }
 function refreshPOS(grid) { const c = $('#pos-cart'); if (c) c.innerHTML = posCart(); if (grid) { const g = $('#pos-grid'); if (g) g.innerHTML = posGrid(); } }
+/* stock check used by the POS and the invoice editor: not enough stock, or only expired stock left */
+function stockProblem(p, qty, allowance = 0) {
+  if (!isStock(p)) return '';
+  if (!S().allowNegativeStock && qty > stockOf(p.id) + allowance + 0.0005) return `${t('errNoStock')}: ${loc(p)} (${fmtNum(stockOf(p.id), 3)})`;
+  if (lotsOf(p.id) && qty > sellableQty(p.id) + allowance + 0.0005) return `${t('errExpiredStock')}: ${loc(p)} (${t('sellable')} ${fmtNum(Math.max(0, sellableQty(p.id)), 3)})`;
+  return '';
+}
 function posAdd(pid, qty = 1) {
   const p = DB.get('products', pid); if (!p) return;
   const line = POS.items.find(i => i.productId === pid);
   const want = (line ? +line.qty : 0) + qty;
-  if (isStock(p) && !S().allowNegativeStock && want > stockOf(pid)) { toast(`${t('errNoStock')}: ${loc(p)} (${fmtNum(stockOf(pid), 3)})`, 'err'); return; }
+  const bad = stockProblem(p, want); if (bad) { toast(bad, 'err'); return; }
   if (line) line.qty = round(want); else POS.items.push({ productId: pid, qty, price: +p.price, discount: 0 });
   refreshPOS(false);
 }
@@ -150,7 +160,7 @@ function docEditor(kind, preset = {}) {
   const isSales = kind === 'sales';
   ED = { kind, type: isSales ? 'sale' : 'purchase', date: today(), partyId: '', supplierRef: '', items: [], discount: 0, taxRate: +S().taxRate || 0, paid: 0, method: isSales ? 'cash' : 'transfer', notes: '', ...preset };
   const parties = DB.all(isSales ? 'customers' : 'suppliers').filter(p => p.active !== false || p.id === ED.partyId);
-  const title = `${t('new')} — ${t(isSales ? (ED.type === 'return' ? 'salesReturn' : 'salesInvoice') : (ED.type === 'return' ? 'purchaseReturn' : 'purchaseInvoice'))}${ED.refNumber ? ` (${t('for')} ${ED.refNumber})` : ''}`;
+  const title = `${t(ED.editId ? 'editInvoiceT' : 'new')} — ${t(isSales ? (ED.type === 'return' ? 'salesReturn' : 'salesInvoice') : (ED.type === 'return' ? 'purchaseReturn' : 'purchaseInvoice'))}${ED.refNumber ? ` (${t('for')} ${ED.refNumber})` : ''}`;
   const root = modal({ title, size: 'xl',
     body: `<div class="form-grid three">
         <label class="field"><span>${t(isSales ? 'f_customerId' : 'f_supplierId')}${isSales ? '' : ' <i class="req">*</i>'}</span><select class="input" id="ed-party" ${ED.refId ? 'disabled' : ''}><option value="">${isSales ? t('walkIn') : '—'}</option>${parties.map(p => `<option value="${p.id}" ${ED.partyId === p.id ? 'selected' : ''}>${esc(loc(p))}</option>`).join('')}</select></label>
@@ -160,7 +170,7 @@ function docEditor(kind, preset = {}) {
       ${ED.refId ? '' : `<div class="ed-add"><div class="pos-search">${icon('barcode')}<input class="input" id="ed-pick" list="dl-prod" placeholder="${t('posSearch')}" autocomplete="off"></div>
         <datalist id="dl-prod">${DB.all('products').filter(p => p.active !== false).map(p => `<option value="${esc(p.code)} | ${esc(loc(p))}">`).join('')}</datalist>
         <button class="btn ghost" type="button" data-ed="add">${icon('plus')}<span>${t('add')}</span></button></div>`}
-      <div class="table-wrap"><table class="table compact ed-table"><thead><tr><th>${t('f_productId')}</th><th>${t('f_qty')}</th><th>${t(isSales ? 'f_price' : 'f_cost')}</th><th>${t('f_discount')}</th><th>${t('total')}</th><th></th></tr></thead><tbody id="ed-lines"></tbody></table></div>
+      <div class="table-wrap"><table class="table compact ed-table"><thead><tr><th>${t('f_productId')}</th><th>${t('f_qty')}</th><th>${t(isSales ? 'f_price' : 'f_cost')}</th><th>${t('f_discount')}</th>${!isSales && ED.type === 'purchase' ? `<th>${t('f_expiry')}</th>` : ''}<th>${t('total')}</th><th></th></tr></thead><tbody id="ed-lines"></tbody></table></div>
       <div class="ed-bottom"><label class="field"><span>${t('f_notes')}</span><textarea class="input" id="ed-notes" rows="3">${esc(ED.notes)}</textarea></label><div id="ed-totals" class="ed-totals"></div></div>
       <div class="form-err" hidden></div>`,
     footer: `<button class="btn ghost" data-ed="cancel">${t('cancel')}</button><button class="btn primary" data-ed="save">${icon('check')}<span>${t('save')}</span></button>` });
@@ -170,7 +180,8 @@ function docEditor(kind, preset = {}) {
       <td><input class="input sm num-in" type="number" step="any" min="0" value="${it.qty}" data-i="${i}" data-f="qty"></td>
       <td><input class="input sm num-in" type="number" step="any" min="0" value="${it.price}" data-i="${i}" data-f="price" ${ED.refId ? 'readonly' : ''}></td>
       <td><input class="input sm num-in" type="number" step="any" min="0" value="${it.discount || 0}" data-i="${i}" data-f="discount" ${ED.refId ? 'readonly' : ''}></td>
-      <td class="lt">${money(lineTotal(it))}</td><td><button class="icon-btn danger" type="button" data-ed="del" data-i="${i}">${icon('x')}</button></td></tr>`).join('') : `<tr><td colspan="6">${emptyState(t('noItems'), 'box')}</td></tr>`;
+      ${!isSales && ED.type === 'purchase' ? `<td><input class="input sm" type="date" value="${it.expiry || ''}" data-i="${i}" data-f="expiry"></td>` : ''}
+      <td class="lt">${money(lineTotal(it))}</td><td><button class="icon-btn danger" type="button" data-ed="del" data-i="${i}">${icon('x')}</button></td></tr>`).join('') : `<tr><td colspan="7">${emptyState(t('noItems'), 'box')}</td></tr>`;
     paintTotals();
   };
   const paintTotals = () => {
@@ -203,8 +214,8 @@ function docEditor(kind, preset = {}) {
   box.addEventListener('keydown', e => { if (e.target.id === 'ed-pick' && e.key === 'Enter') { e.preventDefault(); addPicked(); } });
   box.addEventListener('input', e => {
     const el = e.target;
-    if (el.dataset.f) { const it = ED.items[+el.dataset.i]; it[el.dataset.f] = el.value === '' ? 0 : +el.value; el.closest('tr').querySelector('.lt').textContent = money(lineTotal(it));
-      if (ED.type === 'return' && !ED.partyId) ED.paid = docTotal(ED);
+    if (el.dataset.f) { const it = ED.items[+el.dataset.i]; it[el.dataset.f] = el.dataset.f === 'expiry' ? el.value : (el.value === '' ? 0 : +el.value); el.closest('tr').querySelector('.lt').textContent = money(lineTotal(it));
+      if ((ED.type === 'return' || ED.editId) && !ED.partyId) ED.paid = docTotal(ED); // walk-in: the cash amount follows the total
       const keep = document.activeElement; paintTotals(); keep.focus(); }
     else if (['ed-disc', 'ed-tax', 'ed-paid'].includes(el.id)) { ED[{ 'ed-disc': 'discount', 'ed-tax': 'taxRate', 'ed-paid': 'paid' }[el.id]] = +el.value || 0;
       const due = $('#ed-totals .trow:last-child b', root); if (due) due.innerHTML = fmtMoney(Math.max(0, docDue(ED))); const tot = $('#ed-totals .total b', root); if (tot) tot.innerHTML = fmtMoney(docTotal(ED)); }
@@ -225,17 +236,23 @@ function saveDoc(root) {
   if (ED.paid < tt.total - 0.0005 && !ED.partyId) return err(t(ED.type === 'return' ? 'errRefundNeedsCustomer' : 'errCreditNeedsCustomer'));
   // stock leaves on sales and on purchase returns
   const out = (isSales && ED.type === 'sale') || (!isSales && ED.type === 'return');
-  if (out && !S().allowNegativeStock) for (const it of ED.items) { const p = DB.get('products', it.productId); if (isStock(p) && +it.qty > stockOf(p.id)) return err(`${t('errNoStock')}: ${loc(p)} (${fmtNum(stockOf(p.id), 3)})`); }
-  if (!isSales && ED.type === 'purchase') ED.items.forEach(it => { // weighted average cost
+  const orig = ED.editId ? DB.get(ED.kind, ED.editId) : null; const origQty = pid => (orig ? sum(orig.items.filter(x => x.productId === pid), x => x.qty) : 0);
+  if (out) for (const it of ED.items) { const p = DB.get('products', it.productId); const bad = stockProblem(p, +it.qty, origQty(it.productId)); if (bad) return err(bad); }
+  if (!isSales && ED.type === 'purchase' && orig) { /* editing a purchase: stock already counted the original lines */ }
+  else if (!isSales && ED.type === 'purchase') ED.items.forEach(it => { // weighted average cost
     const p = DB.get('products', it.productId); if (!p) return; const q0 = Math.max(0, stockOf(p.id)), c0 = +p.cost || 0, net = +it.qty ? lineTotal(it) / +it.qty : +it.price;
     p.cost = round((q0 * c0 + +it.qty * net) / (q0 + +it.qty || 1));
   });
   const prefix = isSales ? (ED.type === 'return' ? 'SR' : 'S') : (ED.type === 'return' ? 'PR' : 'P');
-  const doc = { number: DB.nextCode(ED.kind, 'number', prefix), type: ED.type, refId: ED.refId || '', date: ED.date, items: ED.items.map(it => ({ productId: it.productId, qty: +it.qty, price: +it.price, discount: +it.discount || 0, cost: it.cost ?? (+DB.get('products', it.productId)?.cost || 0) })),
+  const doc = { number: orig ? orig.number : DB.nextCode(ED.kind, 'number', prefix), type: ED.type, refId: ED.refId || '', date: ED.date, items: ED.items.map(it => ({ productId: it.productId, qty: +it.qty, price: +it.price, discount: +it.discount || 0, cost: it.cost ?? (+DB.get('products', it.productId)?.cost || 0), ...(it.expiry ? { expiry: it.expiry } : {}) })),
     discount: +ED.discount || 0, taxRate: +ED.taxRate || 0, paid: round(+ED.paid || 0), method: ED.method, notes: ED.notes, user: USER.username };
   if (isSales) doc.customerId = ED.partyId; else { doc.supplierId = ED.partyId; doc.supplierRef = ED.supplierRef; }
-  const saved = DB.insert(ED.kind, doc); closeModal(); toast(t('saved'));
+  const saved = orig ? DB.update(ED.kind, orig.id, { ...doc, editedAt: Date.now(), editedBy: USER.username }) : DB.insert(ED.kind, doc); closeModal(); toast(t('saved'));
   location.hash = `#/doc/${ED.kind}/${saved.id}`; render();
+}
+function startEdit(kind, d) {
+  if (!d || d.type === 'return' || DB.all(kind).some(x => x.refId === d.id)) return toast(t('errHasReturns'), 'err');
+  docEditor(kind, { editId: d.id, type: d.type, date: d.date, partyId: kind === 'sales' ? d.customerId : d.supplierId, supplierRef: d.supplierRef || '', items: d.items.map(it => ({ ...it })), discount: d.discount, taxRate: d.taxRate, paid: d.paid, method: d.method === 'credit' ? 'cash' : d.method, notes: d.notes || '' });
 }
 function startReturn(kind, d) {
   const returned = {}; DB.all(kind).filter(x => x.refId === d.id).forEach(x => x.items.forEach(it => { returned[it.productId] = (returned[it.productId] || 0) + +it.qty; }));
@@ -262,7 +279,8 @@ function renderDoc(p) {
       <button class="btn ghost" data-act="doc-print" data-kind="${kind}" data-id="${d.id}" data-size="A4">${icon('printer')}<span>A4</span></button>
       ${isSales ? `<button class="btn ghost" data-act="doc-print" data-kind="${kind}" data-id="${d.id}" data-size="80mm">${icon('receipt')}<span>${t('receipt80')}</span></button>` : ''}
       ${isSales ? `<button class="btn wa" data-act="wa-doc" data-id="${d.id}">${icon('whatsapp')}<span>${t('waSendShort')}</span></button>` : ''}
-      ${d.type !== 'return' && can(ENT[kind].edit) ? `<button class="btn ghost" data-act="doc-return" data-kind="${kind}" data-id="${d.id}">${icon('undo')}<span>${t('makeReturn')}</span></button>` : ''}
+      ${d.type !== 'return' && hasPerm('editInvoice') && !returns.length ? `<button class="btn ghost" data-act="doc-edit" data-kind="${kind}" data-id="${d.id}">${icon('edit')}<span>${t('edit')}</span></button>` : ''}
+      ${d.type !== 'return' && can(ENT[kind].edit) && hasPerm('returns') ? `<button class="btn ghost" data-act="doc-return" data-kind="${kind}" data-id="${d.id}">${icon('undo')}<span>${t('makeReturn')}</span></button>` : ''}
       ${can(['admin']) ? `<button class="btn ghost danger-t" data-act="crud-del" data-key="${kind}" data-id="${d.id}">${icon('trash')}<span>${t('delete')}</span></button>` : ''}`)}
     <div class="grid-3">
       ${card(t(isSales ? 'f_customerId' : 'f_supplierId'), `<div class="info-grid one"><div><span>${t('f_name')}</span><b>${pid ? `<a class="link" href="#/statement/${isSales ? 'customer' : 'supplier'}/${pid}">${esc(partyName(partyCol, pid))}</a>` : esc(t('walkIn'))}</b></div>
@@ -288,7 +306,7 @@ function renderPrintDoc(kind, d, size) {
   if (size === '80mm') {
     const st = S();
     printHTML(`<div class="rcpt"><div class="rc-head">${LOGO.replace(/lg1/g, 'lgr')}<b>${esc(loc(st, 'businessName'))}</b><span>${esc(loc(st, 'address'))}</span><span class="ltr">${esc(st.phone)}</span>${st.taxNo ? `<span>${t('f_taxNo')}: ${esc(st.taxNo)}</span>` : ''}</div>
-      <div class="rc-meta"><span>${docLabel(kind, d)}</span><b class="ltr">${esc(d.number)}</b><span>${fmtDate(d.date)} ${new Date(d.createdAt || Date.now()).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })}</span>${party ? `<span>${t('f_customerId')}: ${esc(loc(party))}</span>` : ''}</div>
+      <div class="rc-meta"><span>${docLabel(kind, d)}</span><b class="ltr">${esc(d.number)}</b><span>${fmtDate(d.date)} ${new Date(d.createdAt || Date.now()).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })}</span>${party ? `<span>${t('f_customerId')}: ${esc(loc(party))}</span>` : ''}${d.user ? `<span>${t('cashierLbl')}: ${esc(loc(DB.all('users').find(u => u.username === d.user)) !== '—' ? loc(DB.all('users').find(u => u.username === d.user)) : d.user)}</span>` : ''}</div>
       <table><thead><tr><th>${t('f_productId')}</th><th>${t('f_qty')}</th><th>${t('total')}</th></tr></thead><tbody>${d.items.map(it => `<tr><td>${esc(prodName(it.productId))}<br><small>${money(it.price)}</small></td><td>${fmtNum(it.qty, 3)}</td><td>${money(lineTotal(it))}</td></tr>`).join('')}</tbody></table>
       <div class="rc-tot"><div><span>${t('subtotal')}</span><b>${money(tt.sub)}</b></div>${tt.disc ? `<div><span>${t('f_discount')}</span><b>-${money(tt.disc)}</b></div>` : ''}${tt.tax ? `<div><span>${t('tax')}</span><b>${money(tt.tax)}</b></div>` : ''}
         <div class="big"><span>${t('total')}</span><b>${money(tt.total)} ${esc(curLabel())}</b></div><div><span>${t('f_paid')} (${t('opt_' + d.method)})</span><b>${money(d.paid)}</b></div>${docDue(d) > 0 ? `<div><span>${t('f_due')}</span><b>${money(docDue(d))}</b></div>` : ''}</div>
@@ -355,6 +373,7 @@ function renderItem(p) {
       ${kpi({ ic: 'tag', label: t('f_price'), val: moneyText(it.price), sub: `${t('f_cost')}: ${moneyText(it.cost)}`, c: 'c1' })}
       ${kpi({ ic: 'chart', label: t('soldLast30'), val: fmtNum(sold30, 3), sub: t('opt_' + it.unit), c: 'c2' })}
       ${kpi({ ic: 'vault', label: t('stockValueCost'), val: moneyText(Math.max(0, stockOf(it.id)) * (+it.cost || 0)), c: 'c4' })}</div>
+    ${lotsOf(it.id) ? card(t('lotsTitle'), `<div class="table-wrap"><table class="table compact"><thead><tr><th>${t('f_expiry')}</th><th>${t('f_qty')}</th><th>${t('ref')}</th><th>${t('f_status')}</th></tr></thead><tbody>${lotsOf(it.id).map(l => `<tr><td>${l.expiry ? fmtDate(l.expiry) : '—'}</td><td>${fmtNum(l.qty, 3)}</td><td class="ltr">${esc(l.ref || '')}</td><td>${!l.expiry ? '' : l.expiry < today() ? badge('overdue', t('exp_expired')) : l.expiry <= addDays(today(), +S().expiryAlertDays || 30) ? badge('partial', t('exp_soon')) : badge('active', t('exp_ok'))}</td></tr>`).join('')}</tbody></table></div>`) : ''}
     ${card(t('movements'), mv.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>${t('f_date')}</th><th>${t('ref')}</th><th>${t('f_description')}</th><th>${t('in')}</th><th>${t('out')}</th><th>${t('f_balance')}</th></tr></thead><tbody>
       ${mv.slice().reverse().slice(0, 200).map(m => `<tr><td>${m.date ? fmtDate(m.date) : '—'}</td><td class="ltr">${m.link ? `<a class="link" href="${m.link}">${esc(m.ref)}</a>` : esc(m.ref || '')}</td><td>${esc(m.desc)}</td><td class="pos">${m.qty > 0 ? fmtNum(m.qty, 3) : ''}</td><td class="neg">${m.qty < 0 ? fmtNum(-m.qty, 3) : ''}</td><td><b>${fmtNum(m.bal, 3)}</b></td></tr>`).join('')}</tbody></table></div>` : emptyState(t('noData')))}`;
 }
@@ -392,6 +411,7 @@ function renderReports(p) {
   const stockByCat = DB.all('categories').map(c => { const ps = DB.all('products').filter(p2 => p2.categoryId === c.id && isStock(p2)); return { c, n: ps.length, qty: sum(ps, p2 => Math.max(0, stockOf(p2.id))), cost: sum(ps, p2 => Math.max(0, stockOf(p2.id)) * (+p2.cost || 0)), retail: sum(ps, p2 => Math.max(0, stockOf(p2.id)) * (+p2.price || 0)) }; });
   const debtors = DB.all('customers').map(c => ({ c, b: customerBalance(c.id) })).filter(x => x.b > 0.0005).sort((a, b) => b.b - a.b).slice(0, 8);
   const periods = ['today', 'week', 'month', 'lastMonth', 'year', 'custom'];
+  const fin = can(['admin', 'accountant']);
   return `${pageHead(t('nav_reports'), t('sub_reports'), `<button class="btn ghost" data-act="rep-export" data-what="sales" data-from="${from}" data-to="${to}">${icon('download')}<span>${t('nav_sales')}</span></button>
       <button class="btn ghost" data-act="rep-export" data-what="products" data-from="${from}" data-to="${to}">${icon('download')}<span>${t('topProducts')}</span></button>
       <button class="btn ghost" data-act="rep-export" data-what="stock">${icon('download')}<span>${t('stockReport')}</span></button>`)}
@@ -405,6 +425,8 @@ function renderReports(p) {
       ${card(t('paymentMethods'), methods.length ? donut(methods, { center: fmtNum(sales.filter(d => d.type === 'sale').length), sub: t('invoicesLbl') }) : emptyState(t('noData')))}</div>
     <div class="grid-2">${card(t('expensesByCategory'), expItems.length ? hbars(expItems) : emptyState(t('noData')))}
       ${card(t('topDebtors'), debtors.length ? `<ul class="list">${debtors.map(x => `<li>${avatar(x.c)}<div><a class="link" href="#/statement/customer/${x.c.id}">${esc(loc(x.c))}</a><small class="ltr">${esc(x.c.phone || '')}</small></div><b>${fmtMoney(x.b)}</b></li>`).join('')}</ul>` : emptyState(t('noData')))}</div>
+    ${card(t('dailySales'), dailyTable(from, to), `<small class="muted">${t('dailyHint')}</small>`)}
+    ${fin ? card(t('financialPosition'), financialPosition()) : ''}
     ${card(t('stockReport'), `<div class="table-wrap"><table class="table compact"><thead><tr><th>${t('f_categoryId')}</th><th>${t('itemsCount')}</th><th>${t('f_qty')}</th><th>${t('stockValueCost')}</th><th>${t('stockValueRetail')}</th></tr></thead><tbody>
       ${stockByCat.map(r => `<tr><td><span class="dot" style="background:${catColor(r.c.id)}"></span> ${esc(loc(r.c))}</td><td>${fmtNum(r.n)}</td><td>${fmtNum(r.qty, 3)}</td><td>${fmtMoney(r.cost)}</td><td>${fmtMoney(r.retail)}</td></tr>`).join('')}
       <tr class="total-row"><td>${t('total')}</td><td>${fmtNum(sum(stockByCat, r => r.n))}</td><td>${fmtNum(sum(stockByCat, r => r.qty), 3)}</td><td>${fmtMoney(sum(stockByCat, r => r.cost))}</td><td>${fmtMoney(sum(stockByCat, r => r.retail))}</td></tr></tbody></table></div>`)}`;
@@ -447,6 +469,12 @@ function renderSettings() {
     ${window.dalalaDesktop && window.dalalaDesktop.licensed ? card(`🔒 ${t('licenseInfo')}`, `<div class="info-grid"><div><span>${t('licensedTo')}</span><b>${esc(window.dalalaDesktop.customer || '—')}</b></div>
       <div><span>${t('licenseExpiry')}</span><b>${window.dalalaDesktop.expiry ? fmtDate(window.dalalaDesktop.expiry) : t('lifetime')}</b></div>
       <div><span>${t('deviceCode')}</span><b class="ltr">${esc(window.dalalaDesktop.deviceId)}</b></div><div><span>${t('licenseIssued')}</span><b>${window.dalalaDesktop.issued ? fmtDate(window.dalalaDesktop.issued) : '—'}</b></div></div>`) : ''}
+    ${card(t('securityDisplay'), `<div class="form-grid">
+      <label class="field"><span>${t('f_autoLockMin')}</span><input class="input" type="number" min="0" max="240" id="set-autolock" value="${esc(st.autoLockMin || 0)}"></label>
+      <label class="field"><span>${t('f_expiryAlertDays')}</span><input class="input" type="number" min="1" max="365" id="set-expdays" value="${esc(st.expiryAlertDays || 30)}"></label>
+      <label class="field"><span>${t('f_accent')}</span><div class="row-in"><input class="input color" type="color" id="set-accent" value="${esc(st.accent || '#059669')}"><button class="btn ghost sm" type="button" data-act="accent-reset">${t('default')}</button></div></label></div>
+      <div class="form-actions"><button class="btn primary" type="button" data-act="settings-sec-save">${icon('check')}<span>${t('save')}</span></button></div>`)}
+    ${USER.role === 'admin' ? card(t('newYear'), `<p class="hint">${t('newYearHint')}</p><div class="btn-row"><button class="btn danger" data-act="new-year">${icon('refresh')}<span>${t('newYear')}</span></button></div>`) : ''}
     ${waSettingsCard()}
     ${card(t('dataManagement'), `<p class="hint">${t('dataHint')}</p><div class="btn-row">
       <button class="btn ghost" data-act="backup">${icon('download')}<span>${t('backup')}</span></button>

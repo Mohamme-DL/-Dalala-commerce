@@ -21,6 +21,7 @@ const ENT = {
       { k: 'price', type: 'number', money: 1, req: 1, list: 1 },
       { k: 'wholesalePrice', type: 'number', money: 1 },
       { k: 'openingQty', type: 'number', def: 0, signed: 1 },
+      { k: 'openingExpiry', type: 'date' },
       { k: 'minQty', type: 'number', def: 0 },
       { k: 'stock', type: 'calc', list: 1, get: r => (isStock(r) ? stockOf(r.id) : null), fmt: r => stockBadge(r) },
       { k: 'margin', type: 'calc', list: 1, get: r => (+r.price ? pct(r.price - r.cost, r.price) : 0), fmt: r => `${fmtNum(+r.price ? pct(r.price - r.cost, r.price) : 0, 1)}%` },
@@ -107,7 +108,7 @@ const ENT = {
     actions: [
       { icon: 'eye', label: 'view', href: r => `#/doc/sales/${r.id}` },
       { icon: 'printer', label: 'print', fn: r => printDoc('sales', r) },
-      { icon: 'undo', label: 'makeReturn', roles: ['admin', 'cashier', 'accountant'], show: r => r.type === 'sale', fn: r => startReturn('sales', r) },
+      { icon: 'undo', label: 'makeReturn', roles: ['admin', 'cashier', 'accountant'], show: r => r.type === 'sale' && hasPerm('returns'), fn: r => startReturn('sales', r) },
     ],
     summary: rows => [
       { label: t('netSales'), value: moneyText(sum(rows, d => sign(d) * docTotal(d))) },
@@ -136,7 +137,7 @@ const ENT = {
     actions: [
       { icon: 'eye', label: 'view', href: r => `#/doc/purchases/${r.id}` },
       { icon: 'printer', label: 'print', fn: r => printDoc('purchases', r) },
-      { icon: 'undo', label: 'makeReturn', roles: ['admin', 'storekeeper', 'accountant'], show: r => r.type === 'purchase', fn: r => startReturn('purchases', r) },
+      { icon: 'undo', label: 'makeReturn', roles: ['admin', 'storekeeper', 'accountant'], show: r => r.type === 'purchase' && hasPerm('returns'), fn: r => startReturn('purchases', r) },
     ],
     summary: rows => [
       { label: t('netPurchases'), value: moneyText(sum(rows, d => sign(d) * docTotal(d))) },
@@ -228,10 +229,13 @@ const ENT = {
       { k: 'name', type: 'text', req: 1, list: 1, show: r => loc(r) },
       { k: 'nameEn', type: 'text', dir: 'ltr' },
       { k: 'role', type: 'select', opts: ['admin', 'cashier', 'accountant', 'storekeeper'], optLabel: v => t('role_' + v), req: 1, list: 1, badge: 1 },
+      { k: 'perms', type: 'multiselect', opts: PERMS, optLabel: v => t('perm_' + v), full: 1, hint: 'permsHint' },
       { k: 'active', type: 'bool', def: true, list: 1 },
     ],
     filters: [{ k: 'role' }],
     canDelete: r => r.id !== USER.id,
+    validate: r => (!isHashed(r.password) && String(r.password).length < 8 ? t('passwordShort8') : null),
+    afterSave: async r => { if (!isHashed(r.password)) { DB.update('users', r.id, { password: await hashPassword(r.password) }); } },
   },
 };
 
