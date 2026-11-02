@@ -52,6 +52,7 @@ let NET_BOOT = null;
   }
   const pendingIds = () => { const s = new Set(); queue.forEach(op => (op.put || []).forEach(r => s.add(op.col + '|' + r.id))); return s; };
   function applyEntries(entries) {
+    if (!DB.fresh) { const local = diff(); if (local.length) { queue.push(...local); saveQueue(); flush(); } } // never let remote changes swallow unsent local edits
     const mine = pendingIds(); let n = 0;
     for (const e of entries) for (const op of e.ops) {
       if (op.obj) { DB.d[op.obj] = op.value; n++; continue; }
@@ -97,7 +98,7 @@ let NET_BOOT = null;
       try {
         const r = await req(`/api/changes?since=${NETSTATE.version}&wait=1&name=${encodeURIComponent(NETCFG.name || '')}`, { timeout: 35000 });
         NETSTATE.online = true; NETSTATE.error = ''; NETSTATE.lastSync = Date.now();
-        if (r.reset) { await reloadSnapshot(); scheduleRender(); }
+        if (r.reset) { if (!DB.fresh) { const local = diff(); if (local.length) { queue.push(...local); saveQueue(); } } await reloadSnapshot(); scheduleRender(); }
         else { if (r.entries && r.entries.length) applyEntries(r.entries); setVersion(r.version); }
         if (queue.length) flush();
         updateBadge();

@@ -24,7 +24,8 @@ function lanAddresses() { return Object.values(os.networkInterfaces()).flat().fi
 async function startServer() {
   if (NET.mode !== 'host') return;
   if (!NET.key) { NET.key = net.newKey(); fs.writeFileSync(netFile(), JSON.stringify(NET, null, 1)); }
-  server = net.createServer({ port: NET.port, key: NET.key, dir: path.join(app.getPath('userData'), 'shared'), onEvent: (k, m) => { if (k === 'error') serverError = m; } });
+  let rules = {}; try { rules = require('./netrules'); } catch (e) { /* no product rules */ }
+  server = net.createServer({ rules, port: NET.port, key: NET.key, dir: path.join(app.getPath('userData'), 'shared'), onEvent: (k, m) => { if (k === 'error') serverError = m; } });
   try { await server.listen(); } catch (e) { serverError = e.message; dialog.showErrorBox(PRODUCT.nameAr, `تعذر تشغيل خادم الشبكة على المنفذ ${NET.port}.\n${e.message}`); server = null; }
 }
 function ping(host, port, key) {

@@ -4,7 +4,10 @@
      keeps a change log so other computers receive only what changed (long-polling).
    - Document numbers (S-000123…) and auto codes are made unique here, so two cashiers saving at
      the same moment never get the same number.
-   - Every request needs the pairing key (x-dalala-key header). */
+   - Every request needs the pairing key (x-dalala-key header).
+   - Optional product rules (netrules.js): put(col, rec, ctx) / obj(name, incoming, current, ctx) hooks
+     for things like daily order numbers; op.inc = { id: { field: delta } } adds to counters such as
+     stock instead of overwriting them, so two cashiers selling the same item never lose a sale. */
 'use strict';
 const http = require('http');
 const fs = require('fs');
@@ -15,7 +18,7 @@ const NUMBERED = { number: true, code: true };
 const AUTO_CODE = /^([A-Za-z]+-)(\d+)$/;
 const LOG_MAX = 5000;
 
-function createServer({ port, key, dir, onEvent = () => {} }) {
+function createServer({ port, key, dir, onEvent = () => {}, rules = {} }) {
   const file = path.join(dir, 'shared-db.json');
   const backups = path.join(dir, 'backups');
   let state = { version: 0, data: null };
@@ -24,6 +27,7 @@ function createServer({ port, key, dir, onEvent = () => {} }) {
   const waiters = new Set();
   const clients = new Map(); // clientId -> { name, lastSeen, ip }
   let saveTimer = null;
+  const mem = {}; // scratch memory for product rules (e.g. renumbered orders)
 
   function persist() {
     clearTimeout(saveTimer);
@@ -45,9 +49,17 @@ function createServer({ port, key, dir, onEvent = () => {} }) {
   }
   function apply(ops, clientId) {
     if (!state.data) state.data = {};
-    const changes = [];
+    const changes = []; const touched = new Set();
+    const ctx = { data: state.data, mem, touch: name => touched.add(name) };
+    const r6 = n => Math.round(n * 1e6) / 1e6;
     for (const op of ops || []) {
-      if (op.obj) { if (op.obj === 'version') continue; state.data[op.obj] = op.value; changes.push(op); continue; }
+      if (op.obj) {
+        if (op.obj === 'version' || /^__/.test(op.obj)) continue;
+        const cur = state.data[op.obj];
+        let val = op.patch && cur && typeof cur === 'object' ? { ...cur, ...op.patch } : (op.patch || op.value);
+        if (rules.obj) val = rules.obj(op.obj, val, cur, ctx) || val;
+        state.data[op.obj] = val; touched.add(op.obj); continue;
+      }
       if (!op.col || /^__/.test(op.col)) continue;
       const arr = state.data[op.col] = Array.isArray(state.data[op.col]) ? state.data[op.col] : [];
       const index = new Map(arr.map((r, i) => [r.id, i]));
@@ -57,6 +69,9 @@ function createServer({ port, key, dir, onEvent = () => {} }) {
       const put = [];
       for (const rec of op.put || []) {
         if (!rec || !rec.id) continue;
+        const inc = op.inc && op.inc[rec.id];
+        if (inc && idx.has(rec.id)) { const old = target[idx.get(rec.id)]; for (const [f, d] of Object.entries(inc)) if (typeof old[f] === 'number' && typeof d === 'number') rec[f] = r6(old[f] + d); }
+        if (rules.put) rules.put(op.col, rec, ctx);
         for (const f of Object.keys(NUMBERED)) { // keep numbers/codes unique across computers
           if (rec[f] && AUTO_CODE.test(String(rec[f])) && target.some(r => r[f] === rec[f] && r.id !== rec.id)) { const n = nextNumber(target, f, rec[f]); if (n) rec[f] = n; }
         }
@@ -65,6 +80,7 @@ function createServer({ port, key, dir, onEvent = () => {} }) {
       }
       if (put.length || del.length) changes.push({ col: op.col, put, del });
     }
+    for (const name of touched) changes.push({ obj: name, value: state.data[name] });
     if (!changes.length) return { version: state.version, changes: [] };
     state.version++;
     log.push({ v: state.version, clientId, ops: changes }); if (log.length > LOG_MAX) log.splice(0, log.length - LOG_MAX);
