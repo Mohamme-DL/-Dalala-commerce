@@ -74,6 +74,7 @@ const I18N = {
     dataManagement: 'إدارة البيانات', dataHint: 'تُحفظ البيانات على هذا الجهاز. احرص على أخذ نسخة احتياطية بشكل دوري.', backup: 'نسخة احتياطية', restore: 'استعادة نسخة', resetDemo: 'إعادة البيانات التجريبية',
     wipeData: 'بدء منشأة جديدة (مسح البيانات)', resetConfirm: 'سيتم استبدال جميع البيانات الحالية بالبيانات التجريبية. متابعة؟', wipeConfirm: 'سيتم حذف جميع السجلات (مع الإبقاء على الإعدادات وحساب المدير). متابعة؟',
     restoreConfirm: 'سيتم استبدال البيانات الحالية بمحتوى النسخة الاحتياطية. متابعة؟', invalidFile: 'ملف غير صالح',
+    printLang: 'لغة الطباعة', f_currencyEn: 'رمز العملة بالإنجليزية', f_printLang: 'لغة الفواتير المطبوعة', f_receiptFooterEn: 'تذييل الإيصال (إنجليزي)', opt_pl_ui: 'حسب لغة الواجهة', opt_pl_ar: 'العربية', opt_pl_en: 'English (الإنجليزية)', opt_pl_both: 'عربي + إنجليزي',
   },
   en: {
     appName: 'Dalala Commerce', tagline: 'Point of sale, inventory and accounting for shops and trading companies',
@@ -145,7 +146,11 @@ const I18N = {
     dataManagement: 'Data management', dataHint: 'Data is stored on this device. Take regular backups.', backup: 'Backup', restore: 'Restore backup', resetDemo: 'Reload demo data',
     wipeData: 'Start a new business (erase data)', resetConfirm: 'All current data will be replaced with demo data. Continue?', wipeConfirm: 'All records will be deleted (settings and the admin account are kept). Continue?',
     restoreConfirm: 'Current data will be replaced with the backup contents. Continue?', invalidFile: 'Invalid file',
+    printLang: 'Print language', f_currencyEn: 'Currency (English)', f_printLang: 'Printed invoice language', f_receiptFooterEn: 'Receipt footer (English)', opt_pl_ui: 'Same as screen', opt_pl_ar: 'Arabic (العربية)', opt_pl_en: 'English', opt_pl_both: 'Arabic + English',
   },
 };
 
-function t(k) { const v = I18N[LANG]?.[k]; return v !== undefined ? v : (I18N.en[k] !== undefined ? I18N.en[k] : k); }
+function t(k) {
+  if (typeof PRINT_MODE !== 'undefined' && PRINT_MODE === 'both') { const a = I18N.ar[k] ?? I18N.en[k] ?? k, e = I18N.en[k] ?? a; return typeof a !== 'string' || a === e ? a : `${a} / ${e}`; }
+  const v = I18N[LANG]?.[k]; return v !== undefined ? v : (I18N.en[k] !== undefined ? I18N.en[k] : k);
+}

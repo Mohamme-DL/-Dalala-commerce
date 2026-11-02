@@ -78,15 +78,41 @@ const locale = () => (LANG === 'ar' ? 'ar-u-nu-latn' : 'en-US');
 const S = () => DB.d.settings;
 function fmtNum(n, d = 0) { return Number(n || 0).toLocaleString(locale(), { maximumFractionDigits: d }); }
 function money(n) { const d = +(S().decimals ?? 3); return Number(n || 0).toLocaleString(locale(), { minimumFractionDigits: d, maximumFractionDigits: d }); }
-function fmtMoney(n) { return `<span class="num">${money(n)}</span> <small class="cur">${esc(S().currency || '')}</small>`; }
-function moneyText(n) { return `${money(n)} ${S().currency || ''}`; }
+function curLabel() { const st = S(); return (LANG === 'en' && PRINT_MODE !== 'both' && st.currencyEn) ? st.currencyEn : (st.currency || ''); }
+function fmtMoney(n) { return `<span class="num">${money(n)}</span> <small class="cur">${esc(curLabel())}</small>`; }
+function moneyText(n) { return `${money(n)} ${curLabel()}`; }
 function parseISO(s) { if (!s) return null; const [y, m, d] = String(s).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); }
 function iso(d) { const z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; }
 function today() { return iso(new Date()); }
 function addDays(s, n) { const d = parseISO(s); d.setDate(d.getDate() + n); return iso(d); }
 function fmtDate(s, opt) { const d = parseISO(s); if (!d || isNaN(d)) return '—'; return d.toLocaleDateString(locale(), opt || { year: 'numeric', month: 'short', day: 'numeric' }); }
 function dayName(i, short) { return t(short ? 'daysShort' : 'days')[i]; }
-function loc(r, k = 'name') { if (!r) return '—'; return (LANG === 'en' && r[k + 'En']) ? r[k + 'En'] : (r[k] ?? '—'); }
+function loc(r, k = 'name') {
+  if (!r) return '—';
+  if (PRINT_MODE === 'both' && r[k + 'En'] && r[k] && r[k + 'En'] !== r[k]) return `${r[k]} / ${r[k + 'En']}`;
+  return (LANG === 'en' && r[k + 'En']) ? r[k + 'En'] : (r[k] ?? '—');
+}
+
+/* ---------- Print language: 'ar' | 'en' | 'both' (Arabic + English), independent of the screen language ---------- */
+let PRINT_MODE = null;
+let PRINT_PICK = '';  // per-session choice made on the document page; '' = use the setting
+const PRINT_LANGS = ['ui', 'ar', 'en', 'both'];
+function effectivePrintLang(pick) { const v = pick || PRINT_PICK || S().printLang || 'ui'; return v === 'ui' ? LANG : v; }
+function withPrintLang(pick, fn) {
+  const mode = effectivePrintLang(pick); const prev = LANG;
+  PRINT_MODE = mode; LANG = mode === 'en' ? 'en' : 'ar';
+  try { return fn(); } finally { LANG = prev; PRINT_MODE = null; }
+}
+function receiptFooterText() {
+  const st = S(); const ar = st.receiptFooter || '', en = st.receiptFooterEn || '';
+  if (PRINT_MODE === 'en') return en || ar;
+  if (PRINT_MODE === 'both') return [ar, en].filter(Boolean).join(' — ');
+  return ar;
+}
+function printLangSelect(cls = '') {
+  return `<label class="sel ${cls}"><span>${icon('globe')}</span><select class="input sm" data-chg="print-lang" title="${t('printLang')}">
+    <option value="">${t('printLang')}: ${t('opt_pl_' + (S().printLang || 'ui'))}</option>${['ar', 'en', 'both'].map(v => `<option value="${v}" ${PRINT_PICK === v ? 'selected' : ''}>${t('opt_pl_' + v)}</option>`).join('')}</select></label>`;
+}
 function pct(a, b) { return b ? Math.round(a * 1000 / b) / 10 : 0; }
 function norm(s) { return String(s ?? '').toLowerCase().replace(/[ً-ْـ]/g, '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي'); }
 function hue(str) { let h = 0; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }

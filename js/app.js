@@ -168,14 +168,14 @@ const ACT = {
   // documents
   'doc-print': el => printDoc(el.dataset.kind, DB.get(el.dataset.kind, el.dataset.id), el.dataset.size),
   'doc-return': el => startReturn(el.dataset.kind, DB.get(el.dataset.kind, el.dataset.id)),
-  'stmt-print': el => { const col = el.dataset.kind === 'customer' ? 'customers' : 'suppliers'; const p = DB.get(col, el.dataset.id); const lines = statement(el.dataset.kind, p.id);
-    printHTML(`${printHeader(t('statement'), esc(loc(p)))}${stmtTable(lines).replace(/<a [^>]*>|<\/a>/g, '').replace('class="table compact"', 'class="ptable"')}<div class="ptotals"><div><span>${t('currentBalance')}</span><b>${moneyText(lines.length ? lines[lines.length - 1].balance : 0)}</b></div></div>`); },
+  'stmt-print': el => withPrintLang('', () => { const col = el.dataset.kind === 'customer' ? 'customers' : 'suppliers'; const p = DB.get(col, el.dataset.id); const lines = statement(el.dataset.kind, p.id);
+    printHTML(`${printHeader(t('statement'), esc(loc(p)))}${stmtTable(lines).replace(/<a [^>]*>|<\/a>/g, '').replace('class="table compact"', 'class="ptable"')}<div class="ptotals"><div><span>${t('currentBalance')}</span><b>${moneyText(lines.length ? lines[lines.length - 1].balance : 0)}</b></div></div>`); }),
   'stmt-export': el => exportCSV(`statement-${el.dataset.kind}`, [t('f_date'), t('ref'), t('f_description'), t('debit'), t('credit'), t('f_balance')], statement(el.dataset.kind, el.dataset.id).map(l => [l.date, l.ref, l.desc, l.debit, l.credit, l.balance])),
   'treasury-export': el => { let b = 0; exportCSV(`treasury-${el.dataset.acc}`, [t('f_date'), t('ref'), t('f_description'), t('in'), t('out'), t('f_balance')], moneyMoves().filter(m => m.account === el.dataset.acc).map(m => { b = round(b + m.amount); return [m.date, m.ref, m.desc, m.amount > 0 ? m.amount : '', m.amount < 0 ? -m.amount : '', b]; })); },
   'rep-export': el => reportExport(el),
   'settings-save': () => {
     const f = $('#settings-form'); const st = S(); const num = ['decimals', 'taxRate', 'openingCash', 'openingBank'];
-    ['businessName', 'businessNameEn', 'activity', 'activityEn', 'address', 'addressEn', 'phone', 'email', 'municipality', 'crNo', 'taxNo', 'chamberNo', 'licenseNo', 'currency', 'receiptSize', 'receiptFooter', ...num]
+    ['businessName', 'businessNameEn', 'activity', 'activityEn', 'address', 'addressEn', 'phone', 'email', 'municipality', 'crNo', 'taxNo', 'chamberNo', 'licenseNo', 'currency', 'currencyEn', 'receiptSize', 'receiptFooter', 'receiptFooterEn', 'printLang', ...num]
       .forEach(k => { if (f.elements[k]) st[k] = num.includes(k) ? Number(f.elements[k].value) || 0 : f.elements[k].value.trim(); });
     st.decimals = Math.max(0, Math.min(3, Math.round(st.decimals)));
     st.allowNegativeStock = f.elements.allowNegativeStock.checked;
@@ -188,6 +188,7 @@ const ACT = {
 const CHG = {
   'crud-filter': el => { const st = crudState(el.dataset.key); st.f[el.dataset.f] = el.value; st.page = 1; if (el.dataset.f === 'period' && parseHash().params.period) { location.hash = '#/' + el.dataset.key; return; } render(); },
   'nav-param': el => setParam(el.dataset.param, el.value),
+  'print-lang': el => { PRINT_PICK = el.value; },
   'pos-customer': el => { POS.customerId = el.value; refreshPOS(false); },
   'pos-setqty': el => { const it = POS.items[+el.dataset.i]; const v = +el.value; const p = DB.get('products', it.productId);
     if (!(v > 0)) POS.items.splice(+el.dataset.i, 1);

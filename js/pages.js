@@ -50,7 +50,7 @@ function renderDashboard() {
       <div class="quick">${quick.map(q => q.href ? `<a class="qbtn" href="${q.href}">${icon(q.ic)}<span>${q.l}</span></a>` : `<button class="qbtn" data-act="${q.act}" data-key="${q.key || ''}">${icon(q.ic)}<span>${q.l}</span></button>`).join('')}</div></div>
     <div class="kpis">${kpis.map(kpi).join('')}</div>
     <div class="minis">${minis.map(m => `<a class="mini" href="${m.href}">${icon(m.ic)}<b>${m.v}</b><span>${m.l}</span></a>`).join('')}</div>
-    <div class="grid-3">${card(t('salesLast14'), barChart(trend), `<a class="link" href="#/reports">${t('viewAll')}</a>`, 'span-2')}${card(t('salesByCategoryMonth'), catItems.length ? donut(catItems, { center: fmtNum(net(month) / 1000, 1) + 'k', sub: S().currency }) : emptyState(t('noData')))}</div>
+    <div class="grid-3">${card(t('salesLast14'), barChart(trend), `<a class="link" href="#/reports">${t('viewAll')}</a>`, 'span-2')}${card(t('salesByCategoryMonth'), catItems.length ? donut(catItems, { center: fmtNum(net(month) / 1000, 1) + 'k', sub: curLabel() }) : emptyState(t('noData')))}</div>
     <div class="grid-2">
       ${card(t('latestInvoices'), latest.length ? `<ul class="list">${latest.map(d => `<li>${badge(d.type)}<div><a class="link ltr" href="#/doc/sales/${d.id}">${esc(d.number)}</a><small>${fmtDate(d.date)} · ${esc(partyName('customers', d.customerId))}</small></div><b>${fmtMoney(docTotal(d))}</b></li>`).join('')}</ul>` : emptyState(t('noData')), `<a class="link" href="#/sales">${t('viewAll')}</a>`)}
       ${card(`${t('lowStock')} (${fmtNum(low.length)})`, low.length ? `<ul class="list">${low.slice(0, 7).map(p => `<li><span class="dot" style="background:${catColor(p.categoryId)}"></span><div><a class="link" href="#/item/${p.id}">${esc(loc(p))}</a><small>${t('f_minQty')}: ${fmtNum(p.minQty)}</small></div>${stockBadge(p)}</li>`).join('')}</ul>` : emptyState(t('allStocked'), 'check'), can(['admin', 'storekeeper']) ? `<button class="btn ghost sm" data-act="reorder">${icon('truck')}<span>${t('createReorder')}</span></button>` : '')}
@@ -134,7 +134,7 @@ function posPay() {
     const root = modal({ title: `${t('saleDone')} — ${d.number}`, size: 'sm',
       body: `<div class="done"><div class="done-ic">${icon('check')}</div><div class="trow total"><span>${t('total')}</span><b>${fmtMoney(docTotal(d))}</b></div>
         ${change > 0 ? `<div class="trow pos"><span>${t('change')}</span><b>${fmtMoney(change)}</b></div>` : ''}${docDue(d) > 0 ? `<div class="trow neg"><span>${t('remainingCredit')}</span><b>${fmtMoney(docDue(d))}</b></div>` : ''}</div>`,
-      footer: `<button class="btn ghost" data-pr="A4">${icon('printer')}<span>A4</span></button><button class="btn ghost" data-pr="80mm">${icon('receipt')}<span>${t('receipt80')}</span></button><span class="grow"></span><button class="btn primary" data-new>${icon('plus')}<span>${t('newSale')}</span></button>` });
+      footer: `${printLangSelect('pr-lang')}<button class="btn ghost" data-pr="A4">${icon('printer')}<span>A4</span></button><button class="btn ghost" data-pr="80mm">${icon('receipt')}<span>${t('receipt80')}</span></button><span class="grow"></span><button class="btn primary" data-new>${icon('plus')}<span>${t('newSale')}</span></button>` });
     $$('[data-pr]', root).forEach(b => { b.onclick = () => { closeModal(); printDoc('sales', d, b.dataset.pr); }; });
     $('[data-new]', root).onclick = () => { closeModal(); setTimeout(() => $('#pos-q')?.focus(), 50); };
   };
@@ -258,6 +258,7 @@ function renderDoc(p) {
   const ref = d.refId ? DB.get(kind, d.refId) : null; const returns = DB.all(kind).filter(x => x.refId === d.id);
   return `${pageHead(`${docLabel(kind, d)} <span class="ltr muted">${esc(d.number)}</span>`, `${fmtDate(d.date, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`, `
       <a class="btn ghost" href="#/${kind}">${icon(LANG === 'ar' ? 'chevR' : 'chevL')}<span>${t('back')}</span></a>
+      ${printLangSelect()}
       <button class="btn ghost" data-act="doc-print" data-kind="${kind}" data-id="${d.id}" data-size="A4">${icon('printer')}<span>A4</span></button>
       ${isSales ? `<button class="btn ghost" data-act="doc-print" data-kind="${kind}" data-id="${d.id}" data-size="80mm">${icon('receipt')}<span>${t('receipt80')}</span></button>` : ''}
       ${d.type !== 'return' && can(ENT[kind].edit) ? `<button class="btn ghost" data-act="doc-return" data-kind="${kind}" data-id="${d.id}">${icon('undo')}<span>${t('makeReturn')}</span></button>` : ''}
@@ -279,7 +280,8 @@ function renderDoc(p) {
 }
 
 /* ================= Printing ================= */
-function printDoc(kind, d, size) {
+function printDoc(kind, d, size, lang) { return withPrintLang(lang, () => renderPrintDoc(kind, d, size)); }
+function renderPrintDoc(kind, d, size) {
   size = size || (kind === 'sales' ? S().receiptSize : 'A4');
   const tt = docTotals(d); const isSales = kind === 'sales'; const party = DB.get(isSales ? 'customers' : 'suppliers', isSales ? d.customerId : d.supplierId);
   if (size === '80mm') {
@@ -288,8 +290,8 @@ function printDoc(kind, d, size) {
       <div class="rc-meta"><span>${docLabel(kind, d)}</span><b class="ltr">${esc(d.number)}</b><span>${fmtDate(d.date)} ${new Date(d.createdAt || Date.now()).toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' })}</span>${party ? `<span>${t('f_customerId')}: ${esc(loc(party))}</span>` : ''}</div>
       <table><thead><tr><th>${t('f_productId')}</th><th>${t('f_qty')}</th><th>${t('total')}</th></tr></thead><tbody>${d.items.map(it => `<tr><td>${esc(prodName(it.productId))}<br><small>${money(it.price)}</small></td><td>${fmtNum(it.qty, 3)}</td><td>${money(lineTotal(it))}</td></tr>`).join('')}</tbody></table>
       <div class="rc-tot"><div><span>${t('subtotal')}</span><b>${money(tt.sub)}</b></div>${tt.disc ? `<div><span>${t('f_discount')}</span><b>-${money(tt.disc)}</b></div>` : ''}${tt.tax ? `<div><span>${t('tax')}</span><b>${money(tt.tax)}</b></div>` : ''}
-        <div class="big"><span>${t('total')}</span><b>${money(tt.total)} ${esc(st.currency)}</b></div><div><span>${t('f_paid')} (${t('opt_' + d.method)})</span><b>${money(d.paid)}</b></div>${docDue(d) > 0 ? `<div><span>${t('f_due')}</span><b>${money(docDue(d))}</b></div>` : ''}</div>
-      <div class="rc-foot">${esc(st.receiptFooter || '')}<br><span class="ltr">*${esc(d.number)}*</span></div></div>`, 'rcpt-mode');
+        <div class="big"><span>${t('total')}</span><b>${money(tt.total)} ${esc(curLabel())}</b></div><div><span>${t('f_paid')} (${t('opt_' + d.method)})</span><b>${money(d.paid)}</b></div>${docDue(d) > 0 ? `<div><span>${t('f_due')}</span><b>${money(docDue(d))}</b></div>` : ''}</div>
+      <div class="rc-foot">${esc(receiptFooterText())}<br><span class="ltr">*${esc(d.number)}*</span></div></div>`, 'rcpt-mode');
     return;
   }
   printHTML(`${printHeader(docLabel(kind, d), `<span class="ltr">${esc(d.number)}</span>`)}
@@ -300,10 +302,11 @@ function printDoc(kind, d, size) {
     <tbody>${d.items.map((it, i) => `<tr><td>${i + 1}</td><td>${esc(prodName(it.productId))}</td><td>${t('opt_' + (DB.get('products', it.productId)?.unit || 'piece'))}</td><td>${fmtNum(it.qty, 3)}</td><td>${money(it.price)}</td><td>${money(it.discount || 0)}</td><td>${money(lineTotal(it))}</td></tr>`).join('')}</tbody></table>
     <div class="ptotals"><div><span>${t('subtotal')}</span><b>${moneyText(tt.sub)}</b></div>${tt.disc ? `<div><span>${t('f_discount')}</span><b>${moneyText(tt.disc)}</b></div>` : ''}${tt.tax ? `<div><span>${t('tax')} ${fmtNum(d.taxRate, 2)}%</span><b>${moneyText(tt.tax)}</b></div>` : ''}
       <div><span>${t('total')}</span><b>${moneyText(tt.total)}</b></div><div><span>${t('f_paid')}</span><b>${moneyText(d.paid)}</b></div><div><span>${t('f_due')}</span><b>${moneyText(Math.max(0, docDue(d)))}</b></div></div>
-    ${d.notes ? `<p><b>${t('f_notes')}:</b> ${esc(d.notes)}</p>` : ''}${isSales && S().receiptFooter ? `<p class="muted">${esc(S().receiptFooter)}</p>` : ''}
+    ${d.notes ? `<p><b>${t('f_notes')}:</b> ${esc(d.notes)}</p>` : ''}${isSales && receiptFooterText() ? `<p class="muted">${esc(receiptFooterText())}</p>` : ''}
     <div class="psign"><div>${t('receiverSign')}</div><div>${t('accountantSign')}</div><div>${t('stamp')}</div></div>`);
 }
-function printVoucher(kind, r) {
+function printVoucher(kind, r, lang) { return withPrintLang(lang, () => renderPrintVoucher(kind, r)); }
+function renderPrintVoucher(kind, r) {
   const isR = kind === 'receipts'; const party = DB.get(isR ? 'customers' : 'suppliers', isR ? r.customerId : r.supplierId);
   printHTML(`${printHeader(t(isR ? 'receiptVoucher' : 'paymentVoucher'), `<span class="ltr">${esc(r.number)}</span>`)}
     <div class="pbox"><div class="kv"><span>${t('f_date')}</span><b>${fmtDate(r.date)}</b></div><div class="kv"><span>${t(isR ? 'receivedFrom' : 'paidTo')}</span><b>${esc(party ? loc(party) : '—')}</b></div>
@@ -394,7 +397,7 @@ function renderReports(p) {
       ${per === 'custom' ? `<label class="sel"><span>${t('from')}</span><input class="input sm" type="date" value="${from}" data-chg="nav-param" data-param="from"></label><label class="sel"><span>${t('to')}</span><input class="input sm" type="date" value="${to}" data-chg="nav-param" data-param="to"></label>` : `<span class="pill">${fmtDate(from)} → ${fmtDate(to)}</span>`}</div>
     <div class="pl">${[['revenue', pr.revenue, ''], ['cogs', -pr.cogs, ''], ['grossProfit', pr.gross, 'b'], ['nav_expenses', -pr.expenses, ''], ['netProfit', pr.net, 'big']].map(([k, v, c]) => `<div class="pl-row ${c} ${v < 0 ? 'neg' : ''}"><span>${t(k)}</span><b>${fmtMoney(v)}</b></div>`).join('')}
       <div class="pl-row"><span>${t('grossMargin')}</span><b>${fmtNum(pct(pr.gross, pr.revenue), 1)}%</b></div><div class="pl-row"><span>${t('invoicesCount')}</span><b>${fmtNum(pr.count)}</b></div><div class="pl-row"><span>${t('avgInvoice')}</span><b>${fmtMoney(pr.count ? pr.revenue / pr.count : 0)}</b></div></div></div>
-    <div class="grid-3">${card(t('salesTrend'), barChart(trend), '', 'span-2')}${card(t('salesByCategory'), catItems.length ? donut(catItems, { center: fmtNum(pr.revenue / 1000, 1) + 'k', sub: S().currency }) : emptyState(t('noData')))}</div>
+    <div class="grid-3">${card(t('salesTrend'), barChart(trend), '', 'span-2')}${card(t('salesByCategory'), catItems.length ? donut(catItems, { center: fmtNum(pr.revenue / 1000, 1) + 'k', sub: curLabel() }) : emptyState(t('noData')))}</div>
     <div class="grid-3">${card(t('topProducts'), top.length ? `<div class="table-wrap"><table class="table compact"><thead><tr><th>${t('f_productId')}</th><th>${t('f_qty')}</th><th>${t('revenue')}</th><th>${t('profit')}</th></tr></thead><tbody>
       ${top.map(([pid, o]) => `<tr><td><a class="link" href="#/item/${pid}">${esc(prodName(pid))}</a></td><td>${fmtNum(o.qty, 3)}</td><td>${fmtMoney(o.rev)}</td><td>${fmtMoney(o.rev - o.cost)}</td></tr>`).join('')}</tbody></table></div>` : emptyState(t('noData')), '', 'span-2')}
       ${card(t('paymentMethods'), methods.length ? donut(methods, { center: fmtNum(sales.filter(d => d.type === 'sale').length), sub: t('invoicesLbl') }) : emptyState(t('noData')))}</div>
@@ -429,10 +432,12 @@ function renderSettings() {
       ${f('phone', 'tel', 'dir="ltr"')}${f('email', 'email', 'dir="ltr"')}
       <label class="field"><span>${t('f_municipality')}</span><input class="input" name="municipality" value="${esc(st.municipality || '')}" list="dl-mun"><datalist id="dl-mun">${LY_MUNICIPALITIES.map(m => `<option value="${m}">`).join('')}</datalist></label>
       ${f('crNo', 'text', 'dir="ltr"')}${f('taxNo', 'text', 'dir="ltr"')}${f('chamberNo', 'text', 'dir="ltr"')}${f('licenseNo', 'text', 'dir="ltr"')}</div>`)}
-    ${card(t('salesSettings'), `<div class="form-grid">${f('currency')}${f('decimals', 'number', 'min="0" max="3"')}${f('taxRate', 'number', 'min="0" max="100" step="any"')}
+    ${card(t('salesSettings'), `<div class="form-grid">${f('currency')}${f('currencyEn', 'text', 'dir="ltr"')}${f('decimals', 'number', 'min="0" max="3"')}${f('taxRate', 'number', 'min="0" max="100" step="any"')}
       <label class="field"><span>${t('f_receiptSize')}</span><select class="input" name="receiptSize">${['80mm', 'A4'].map(v => `<option value="${v}" ${st.receiptSize === v ? 'selected' : ''}>${v === '80mm' ? t('receipt80') : 'A4'}</option>`).join('')}</select></label>
+      <label class="field"><span>${t('f_printLang')}</span><select class="input" name="printLang">${PRINT_LANGS.map(v => `<option value="${v}" ${(st.printLang || 'ui') === v ? 'selected' : ''}>${t('opt_pl_' + v)}</option>`).join('')}</select></label>
       ${f('openingCash', 'number', 'step="any"')}${f('openingBank', 'number', 'step="any"')}
       <label class="field full"><span>${t('f_receiptFooter')}</span><input class="input" name="receiptFooter" value="${esc(st.receiptFooter || '')}"></label>
+      <label class="field full"><span>${t('f_receiptFooterEn')}</span><input class="input" name="receiptFooterEn" value="${esc(st.receiptFooterEn || '')}" dir="ltr"></label>
       <label class="field row full"><input type="checkbox" name="allowNegativeStock" ${st.allowNegativeStock ? 'checked' : ''}><span>${t('f_allowNegativeStock')}</span></label></div>
       <p class="hint">${t('taxHint')}</p>
       <div class="form-actions"><button class="btn primary" type="button" data-act="settings-save">${icon('check')}<span>${t('save')}</span></button></div>`)}
