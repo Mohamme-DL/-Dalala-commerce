@@ -439,3 +439,25 @@ function reportWorkbook(from, to) {
     { name: t('topProducts'), headers: [t('f_code'), t('f_productId'), t('f_qty'), t('revenue'), t('cogs'), t('profit')], rows: Object.entries(prod).sort((a, b) => b[1].rev - a[1].rev).map(([pid, o]) => [DB.get('products', pid)?.code || '', prodName(pid), round(o.qty), round(o.rev), round(o.cost), round(o.rev - o.cost)]) },
   ]);
 }
+
+/* ================= Barcode scanner: add the item without pressing Enter =================
+   A scanner "types" the whole code in a few milliseconds (or pastes it at once). When the field
+   was filled that fast and the text is exactly an item's barcode / code, it is added right away.
+   Normal typing is slower, so a half-typed code never adds the wrong item (Enter still works). */
+const SCAN_FIELDS = ['pos-q', 'ed-pick', 'ed-scan'];
+const scanState = new WeakMap();
+function scanMatch(v) { const c = String(v || '').trim(); if (c.length < 3) return null; return DB.all('products').find(x => x.active !== false && (x.barcode === c || String(x.code).toLowerCase() === c.toLowerCase())) || null; }
+document.addEventListener('input', e => {
+  const el = e.target; if (!el || !SCAN_FIELDS.includes(el.id)) return;
+  const now = performance.now(); let st = scanState.get(el);
+  if (!st || el.value.length <= 1 || now - st.last > 300) st = { first: now, last: now, len: el.value.length, jump: el.value.length > 1 }; // a new entry starts
+  else { if (el.value.length - st.len > 1) st.jump = true; st.last = now; st.len = el.value.length; }
+  scanState.set(el, st); clearTimeout(st.t);
+  st.t = setTimeout(() => {
+    const v = el.value.trim(); if (!v || !document.body.contains(el)) return;
+    const fast = st.jump || (v.length >= 3 && (st.last - st.first) / Math.max(1, v.length - 1) < 35);
+    if (!fast || !scanMatch(v)) return;
+    scanState.delete(el);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })); // same path as pressing Enter
+  }, 90);
+});
