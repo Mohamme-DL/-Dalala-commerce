@@ -261,6 +261,7 @@ function renderDoc(p) {
       ${printLangSelect()}
       <button class="btn ghost" data-act="doc-print" data-kind="${kind}" data-id="${d.id}" data-size="A4">${icon('printer')}<span>A4</span></button>
       ${isSales ? `<button class="btn ghost" data-act="doc-print" data-kind="${kind}" data-id="${d.id}" data-size="80mm">${icon('receipt')}<span>${t('receipt80')}</span></button>` : ''}
+      ${isSales ? `<button class="btn wa" data-act="wa-doc" data-id="${d.id}">${icon('whatsapp')}<span>${t('waSendShort')}</span></button>` : ''}
       ${d.type !== 'return' && can(ENT[kind].edit) ? `<button class="btn ghost" data-act="doc-return" data-kind="${kind}" data-id="${d.id}">${icon('undo')}<span>${t('makeReturn')}</span></button>` : ''}
       ${can(['admin']) ? `<button class="btn ghost danger-t" data-act="crud-del" data-key="${kind}" data-id="${d.id}">${icon('trash')}<span>${t('delete')}</span></button>` : ''}`)}
     <div class="grid-3">
@@ -324,6 +325,7 @@ function renderStatement(p) {
       <a class="btn ghost" href="#/${col}">${icon(LANG === 'ar' ? 'chevR' : 'chevL')}<span>${t('back')}</span></a>
       <button class="btn ghost" data-act="stmt-export" data-kind="${kind}" data-id="${party.id}">${icon('download')}<span>${t('export')}</span></button>
       <button class="btn ghost" data-act="stmt-print" data-kind="${kind}" data-id="${party.id}">${icon('printer')}<span>${t('print')}</span></button>
+      ${kind === 'customer' ? `<button class="btn wa" data-act="wa-customer" data-id="${party.id}">${icon('whatsapp')}<span>${t('waSendShort')}</span></button>` : ''}
       ${kind === 'customer' ? `<button class="btn primary" data-act="quick-add" data-key="receipts" data-preset='${JSON.stringify({ customerId: party.id })}'>${icon('arrowDown')}<span>${t('newReceipt')}</span></button>`
       : `<button class="btn primary" data-act="quick-add" data-key="disbursements" data-preset='${JSON.stringify({ supplierId: party.id })}'>${icon('arrowUp')}<span>${t('newPayment')}</span></button>`}`)}
     <div class="kpis three">${kpi({ ic: 'scale', label: t('currentBalance'), val: moneyText(Math.abs(bal)), sub: bal > 0.0005 ? t(kind === 'customer' ? 'owesUs' : 'weOwe') : bal < -0.0005 ? t(kind === 'customer' ? 'creditFor' : 'advance') : t('settled'), c: bal > 0.0005 ? 'c5' : 'c3' })}
@@ -442,6 +444,7 @@ function renderSettings() {
       <p class="hint">${t('taxHint')}</p>
       <div class="form-actions"><button class="btn primary" type="button" data-act="settings-save">${icon('check')}<span>${t('save')}</span></button></div>`)}
     </form>
+    ${waSettingsCard()}
     ${card(t('dataManagement'), `<p class="hint">${t('dataHint')}</p><div class="btn-row">
       <button class="btn ghost" data-act="backup">${icon('download')}<span>${t('backup')}</span></button>
       <label class="btn ghost">${icon('upload')}<span>${t('restore')}</span><input type="file" accept="application/json,.json" hidden data-chg="restore"></label>

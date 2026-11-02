@@ -13,6 +13,7 @@ const MENU = [
     { id: 'sales', icon: 'receipt', roles: ['admin', 'cashier', 'accountant'] },
     { id: 'customers', icon: 'users', roles: ['admin', 'cashier', 'accountant'] },
     { id: 'receipts', icon: 'arrowDown', roles: ['admin', 'cashier', 'accountant'] },
+    { id: 'messages', icon: 'whatsapp', roles: ['admin', 'cashier', 'accountant'] },
   ] },
   { g: 'g_purchases', items: [
     { id: 'purchases', icon: 'truck', roles: ['admin', 'storekeeper', 'accountant'] },
@@ -34,7 +35,7 @@ const MENU = [
     { id: 'settings', icon: 'settings', roles: ['admin'] },
   ] },
 ];
-const PAGES = { dashboard: renderDashboard, pos: renderPOS, doc: renderDoc, statement: renderStatement, item: renderItem, treasury: renderTreasury, reports: renderReports, settings: renderSettings };
+const PAGES = { dashboard: renderDashboard, pos: renderPOS, doc: renderDoc, statement: renderStatement, item: renderItem, treasury: renderTreasury, reports: renderReports, messages: renderMessages, settings: renderSettings };
 const PAGE_ROLES = { doc: ['admin', 'cashier', 'accountant', 'storekeeper'], statement: ['admin', 'cashier', 'accountant', 'storekeeper'], item: ALL };
 function pageRoles(id) { if (PAGE_ROLES[id]) return PAGE_ROLES[id]; for (const g of MENU) for (const i of g.items) if (i.id === id) return i.roles; return null; }
 const homePage = () => (USER.role === 'cashier' ? 'pos' : 'dashboard');
@@ -185,6 +186,7 @@ const ACT = {
   'reset-demo': () => confirmBox(t('resetConfirm'), () => { DB.reset(); restoreSession(); if (!USER) { logout(); return; } toast(t('done')); render(); }),
   wipe: () => confirmBox(t('wipeConfirm'), () => { DB.wipe(); restoreSession(); if (!USER) { logout(); return; } toast(t('done')); render(); }),
 };
+Object.assign(ACT, ACT_EXTRA, { 'wa-customer': el => waCustomerCompose(el.dataset.id), 'wa-doc': el => waDocCompose(el.dataset.id) });
 const CHG = {
   'crud-filter': el => { const st = crudState(el.dataset.key); st.f[el.dataset.f] = el.value; st.page = 1; if (el.dataset.f === 'period' && parseHash().params.period) { location.hash = '#/' + el.dataset.key; return; } render(); },
   'nav-param': el => setParam(el.dataset.param, el.value),

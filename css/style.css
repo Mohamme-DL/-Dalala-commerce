@@ -570,3 +570,21 @@ kbd { font-family: inherit; font-size: 11px; padding: 1px 6px; border-radius: 6p
   .pos-wrap { grid-template-columns: 1fr; height: auto; } .pos-grid { max-height: 50vh; } .pos-right { position: sticky; bottom: 0; }
   .ed-bottom, .form-grid.three, .kpis.three { grid-template-columns: 1fr; }
 }
+/* ---------- WhatsApp messaging ---------- */
+.btn.wa { background: #25d366; color: #fff; border-color: transparent; box-shadow: 0 6px 16px rgba(37, 211, 102, .28); }
+.btn.wa:hover { background: #1ebe5a; }
+.tabs.wrap { flex-wrap: wrap; margin-bottom: 14px; }
+.wa-ctl { align-items: flex-end; }
+.wa-next-box { justify-content: center; }
+.wa-list { display: flex; flex-direction: column; gap: 8px; }
+.wa-row { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) auto; gap: 12px; align-items: start; padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.wa-row.sent { background: var(--ok-soft); border-color: transparent; }
+.wa-row.nophone { opacity: .6; }
+.wa-meta { display: flex; flex-direction: column; min-width: 0; } .wa-meta small { color: var(--muted); font-size: 12px; }
+.wa-row details summary { cursor: pointer; color: var(--primary); font-size: 13px; font-weight: 600; }
+.wa-pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; background: var(--panel-2); border-radius: 10px; padding: 10px; margin: 6px 0 0; }
+.wa-acts { display: flex; align-items: center; gap: 6px; }
+.wa-text { font-size: 14px; line-height: 1.7; }
+.howto { margin: 0; padding-inline-start: 20px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); }
+@media (max-width: 760px) { .wa-row { grid-template-columns: 1fr; } }
+.sum-item .btn span { color: inherit; font-size: 14px; font-weight: 700; }

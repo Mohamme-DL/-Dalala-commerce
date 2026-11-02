@@ -45,7 +45,7 @@ function defaultSettings() {
     activity: 'تجارة المواد الغذائية والمنظفات والأدوات المنزلية', activityEn: 'Groceries, cleaning supplies & household goods',
     crNo: '', taxNo: '', chamberNo: '', licenseNo: '', municipality: 'طرابلس',
     address: 'طرابلس — شارع الجمهورية', addressEn: 'Tripoli — Al-Jumhuriya St.', phone: '+218 21 000 0000', email: 'sales@dalala.ly',
-    currency: 'د.ل', currencyEn: 'LYD', decimals: 3, taxRate: 0, allowNegativeStock: false, receiptSize: '80mm',
+    currency: 'د.ل', currencyEn: 'LYD', waCountryCode: '218', decimals: 3, taxRate: 0, allowNegativeStock: false, receiptSize: '80mm',
     receiptFooter: 'شكراً لتسوقكم معنا — البضاعة المباعة تستبدل خلال 3 أيام بالفاتورة', receiptFooterEn: 'Thank you for shopping with us — items can be exchanged within 3 days with the receipt', printLang: 'ui', openingCash: 5000, openingBank: 20000,
   };
 }

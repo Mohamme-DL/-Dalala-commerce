@@ -63,7 +63,7 @@ const ENT = {
     filters: [{ k: 'balanceState', opts: ['owing', 'settled', 'overLimit'], test: (r, v) => { const b = customerBalance(r.id); return v === 'owing' ? b > 0.0005 : v === 'settled' ? Math.abs(b) <= 0.0005 : (+r.creditLimit && b > +r.creditLimit); } }],
     validate: r => (S().country === 'LY' && r.phone && !isLyPhone(r.phone) ? t('errPhone') : null),
     blockDelete: id => (DB.all('sales').some(s => s.customerId === id) || DB.all('receipts').some(s => s.customerId === id) ? t('errUsedParty') : null),
-    actions: [{ icon: 'file', label: 'statement', href: r => '#/statement/customer/' + r.id }, { icon: 'arrowDown', label: 'newReceipt', roles: ['admin', 'accountant', 'cashier'], fn: r => openForm('receipts', null, { customerId: r.id, amount: Math.max(0, customerBalance(r.id)) }) }],
+    actions: [{ icon: 'whatsapp', label: 'waSendShort', fn: r => waCustomerCompose(r.id) }, { icon: 'file', label: 'statement', href: r => '#/statement/customer/' + r.id }, { icon: 'arrowDown', label: 'newReceipt', roles: ['admin', 'accountant', 'cashier'], fn: r => openForm('receipts', null, { customerId: r.id, amount: Math.max(0, customerBalance(r.id)) }) }],
     summary: rows => [{ label: t('totalReceivable'), value: moneyText(sum(rows, r => Math.max(0, customerBalance(r.id)))), cls: 'b-overdue' }, { label: t('count'), value: fmtNum(rows.length) }],
   },
 
