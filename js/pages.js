@@ -66,14 +66,20 @@ function renderPOS() {
   return `<div class="pos-wrap">
     <section class="pos-left card">
       <div class="pos-search">${icon('barcode')}<input id="pos-q" class="input" placeholder="${t('posSearch')}" value="${esc(POS.q)}" data-inp="pos-search" autocomplete="off"><kbd>F2</kbd></div>
-      <div class="chips"><button class="chip-b ${!POS.cat ? 'on' : ''}" data-act="pos-cat" data-c="">${t('all')}</button>${cats.map(c => `<button class="chip-b ${POS.cat === c.id ? 'on' : ''}" data-act="pos-cat" data-c="${c.id}" style="--c:${catColor(c.id)}">${esc(loc(c))}</button>`).join('')}</div>
+      <div class="chips">${DB.all('quickGroups').map(g => `<button class="chip-b qg ${POS.cat === 'qg:' + g.id ? 'on' : ''}" data-act="pos-cat" data-c="qg:${g.id}" style="--c:${g.color || '#059669'}">★ ${esc(g.name)}</button>`).join('')}${hasPerm('editProducts') ? `<button class="chip-b ghost" data-act="pos-qg-edit" title="${t('quickButtons')}">${icon('edit')}</button>` : ''}<button class="chip-b ${!POS.cat ? 'on' : ''}" data-act="pos-cat" data-c="">${t('all')}</button>${cats.map(c => `<button class="chip-b ${POS.cat === c.id ? 'on' : ''}" data-act="pos-cat" data-c="${c.id}" style="--c:${catColor(c.id)}">${esc(loc(c))}</button>`).join('')}</div>
       <div id="pos-grid" class="pos-grid">${posGrid()}</div>
+      ${posRecent()}
     </section>
     <section class="pos-right card" id="pos-cart">${posCart()}</section>
   </div>`;
 }
+function posRecent() {
+  const list = DB.all('sales').filter(d => d.type === 'sale' && d.date === today()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 8);
+  return list.length ? `<div class="pos-recent"><span>${t('recentInvoices')}</span>${list.map(d => `<span class="pr-i"><button data-act="pos-recent" data-id="${d.id}" class="ltr">${esc(d.number)} · ${money(docTotal(d))}</button>${hasPerm('editInvoice') && !DB.all('sales').some(x => x.refId === d.id) ? `<button data-act="pos-recent-edit" data-id="${d.id}" title="${t('edit')}">${icon('edit')}</button>` : ''}</span>`).join('')}</div>` : '';
+}
 function posProducts() {
   const q = norm(POS.q).trim();
+  if (String(POS.cat).startsWith('qg:')) { const g = DB.get('quickGroups', POS.cat.slice(3)); return (g ? g.items || [] : []).map(id => DB.get('products', id)).filter(p => p && p.active !== false && (!q || norm(loc(p)).includes(q))); }
   return DB.all('products').filter(p => p.active !== false && (!POS.cat || p.categoryId === POS.cat) && (!q || norm(p.name).includes(q) || norm(p.nameEn).includes(q) || String(p.code).toLowerCase().includes(q) || String(p.barcode || '').includes(q)));
 }
 function posGrid() {
@@ -102,7 +108,7 @@ function posCart() {
       ${+S().taxRate ? `<div class="trow"><span>${t('tax')} (${fmtNum(S().taxRate, 2)}%)</span><b>${fmtMoney(tt.tax)}</b></div>` : ''}
       <div class="trow total"><span>${t('total')}</span><b>${fmtMoney(tt.total)}</b></div>
       <div class="seg methods">${[...METHODS.filter(m => m !== 'cheque'), 'credit'].map(m => `<button class="seg-m ${POS.method === m ? 'on' : ''}" data-act="pos-method" data-m="${m}">${t('opt_' + m)}</button>`).join('')}</div>
-      <div class="trow"><span>${t('paidAmount')}</span><input class="input sm" type="number" step="any" min="0" value="${POS.paid}" placeholder="${money(POS.method === 'credit' ? 0 : tt.total)}" data-chg="pos-paid" dir="ltr"></div>
+      <div class="trow"><span>${t('paidAmount')}</span><span class="paid-in"><input class="input sm" type="number" step="any" min="0" value="${POS.paid}" placeholder="${money(POS.method === 'credit' ? 0 : tt.total)}" data-chg="pos-paid" dir="ltr"><button class="btn ghost sm" data-act="pos-full" title="${t('payFull')}">${t('fullLbl')}</button></span></div>
       <div class="trow ${change < 0 ? 'neg' : 'pos'}"><span>${change < 0 ? t('remainingCredit') : t('change')}</span><b>${fmtMoney(Math.abs(change))}</b></div>
       <button class="btn primary block pay" data-act="pos-pay" ${POS.items.length ? '' : 'disabled'}>${icon('check')}<span>${t('payNow')}</span><kbd>F9</kbd></button>
     </div>`;
@@ -136,11 +142,13 @@ function posPay() {
   if (paid > tt.total) paid = tt.total; // change is given back
   if (paid < tt.total - 0.0005 && !POS.customerId) { toast(t('errCreditNeedsCustomer'), 'err'); return; }
   const doSave = () => {
-    const d = DB.insert('sales', { number: DB.nextCode('sales', 'number', 'S'), type: 'sale', date: today(), customerId: POS.customerId, discount: +POS.discount || 0, taxRate: +S().taxRate || 0,
+    const d = DB.insert('sales', { number: DB.nextCode('sales', 'number', salesPrefix()), type: 'sale', date: today(), customerId: POS.customerId, discount: +POS.discount || 0, taxRate: +S().taxRate || 0,
       items: POS.items.map(it => ({ ...it, cost: +DB.get('products', it.productId)?.cost || 0 })), paid: round(paid), method: paid < tt.total - 0.0005 && paid === 0 ? 'credit' : method, notes: '', user: USER.username });
     const given = POS.paid === '' ? paid : +POS.paid; const change = round(given - tt.total);
     Object.assign(POS, { items: [], discount: 0, paid: '', method: 'cash', customerId: '' });
     render();
+    if (PP().autoPrintReceipt) printDoc('sales', d, S().receiptSize);
+    if (PP().openAfterSale) { location.hash = `#/doc/sales/${d.id}`; return; }
     const root = modal({ title: `${t('saleDone')} — ${d.number}`, size: 'sm',
       body: `<div class="done"><div class="done-ic">${icon('check')}</div><div class="trow total"><span>${t('total')}</span><b>${fmtMoney(docTotal(d))}</b></div>
         ${change > 0 ? `<div class="trow pos"><span>${t('change')}</span><b>${fmtMoney(change)}</b></div>` : ''}${docDue(d) > 0 ? `<div class="trow neg"><span>${t('remainingCredit')}</span><b>${fmtMoney(docDue(d))}</b></div>` : ''}</div>`,
@@ -163,12 +171,14 @@ function docEditor(kind, preset = {}) {
   const title = `${t(ED.editId ? 'editInvoiceT' : 'new')} — ${t(isSales ? (ED.type === 'return' ? 'salesReturn' : 'salesInvoice') : (ED.type === 'return' ? 'purchaseReturn' : 'purchaseInvoice'))}${ED.refNumber ? ` (${t('for')} ${ED.refNumber})` : ''}`;
   const root = modal({ title, size: 'xl',
     body: `<div class="form-grid three">
-        <label class="field"><span>${t(isSales ? 'f_customerId' : 'f_supplierId')}${isSales ? '' : ' <i class="req">*</i>'}</span><select class="input" id="ed-party" ${ED.refId ? 'disabled' : ''}><option value="">${isSales ? t('walkIn') : '—'}</option>${parties.map(p => `<option value="${p.id}" ${ED.partyId === p.id ? 'selected' : ''}>${esc(loc(p))}</option>`).join('')}</select></label>
+        <label class="field"><span>${t(isSales ? 'f_customerId' : 'f_supplierId')}${isSales ? '' : ' <i class="req">*</i>'}</span><span class="row-in"><select class="input" id="ed-party" ${ED.refId ? 'disabled' : ''}><option value="">${isSales ? t('walkIn') : '—'}</option>${parties.map(p => `<option value="${p.id}" ${ED.partyId === p.id ? 'selected' : ''}>${esc(loc(p))}</option>`).join('')}</select>${ED.refId ? '' : `<button class="icon-btn" type="button" data-ed="newparty" title="${t(isSales ? 'newCustomer' : 'newSupplier')}">${icon('userPlus')}</button>`}</span></label>
         <label class="field"><span>${t('f_date')}</span><input class="input" type="date" id="ed-date" value="${ED.date}"></label>
         ${isSales ? '<span></span>' : `<label class="field"><span>${t('f_supplierRef')}</span><input class="input" id="ed-ref" value="${esc(ED.supplierRef)}" dir="ltr"></label>`}
       </div>
-      ${ED.refId ? '' : `<div class="ed-add"><div class="pos-search">${icon('barcode')}<input class="input" id="ed-pick" list="dl-prod" placeholder="${t('posSearch')}" autocomplete="off"></div>
+      <div class="ed-np" id="ed-np" hidden><input class="input sm" id="np-name" placeholder="${t('f_name')}"><input class="input sm" id="np-phone" placeholder="${t('f_phone')}" dir="ltr"><button class="btn primary sm" type="button" data-ed="np-save">${icon('check')}<span>${t(isSales ? 'newCustomer' : 'newSupplier')}</span></button></div>
+      ${ED.refId ? `<div class="ed-add"><div class="pos-search">${icon('barcode')}<input class="input" id="ed-scan" placeholder="${t('scanToReturn')}" autocomplete="off"></div></div>` : `<div class="ed-add"><div class="pos-search">${icon('barcode')}<input class="input" id="ed-pick" list="dl-prod" placeholder="${t('posSearch')}" autocomplete="off"></div>
         <datalist id="dl-prod">${DB.all('products').filter(p => p.active !== false).map(p => `<option value="${esc(p.code)} | ${esc(loc(p))}">`).join('')}</datalist>
+        ${!isSales && ED.type === 'purchase' ? `<label class="sel" title="${t('expiryBeforeAdd')}"><span>${icon('clock')}</span><input class="input sm" type="date" id="ed-exp"></label>` : ''}
         <button class="btn ghost" type="button" data-ed="add">${icon('plus')}<span>${t('add')}</span></button></div>`}
       <div class="table-wrap"><table class="table compact ed-table"><thead><tr><th>${t('f_productId')}</th><th>${t('f_qty')}</th><th>${t(isSales ? 'f_price' : 'f_cost')}</th><th>${t('f_discount')}</th>${!isSales && ED.type === 'purchase' ? `<th>${t('f_expiry')}</th>` : ''}<th>${t('total')}</th><th></th></tr></thead><tbody id="ed-lines"></tbody></table></div>
       <div class="ed-bottom"><label class="field"><span>${t('f_notes')}</span><textarea class="input" id="ed-notes" rows="3">${esc(ED.notes)}</textarea></label><div id="ed-totals" class="ed-totals"></div></div>
@@ -177,7 +187,7 @@ function docEditor(kind, preset = {}) {
   const box = $('.modal', root);
   const paint = () => {
     $('#ed-lines', root).innerHTML = ED.items.length ? ED.items.map((it, i) => `<tr><td>${esc(prodName(it.productId))}${ED.maxQty ? `<small class="muted d-block">${t('maxReturn')}: ${fmtNum(ED.maxQty[it.productId] || 0, 3)}</small>` : ''}</td>
-      <td><input class="input sm num-in" type="number" step="any" min="0" value="${it.qty}" data-i="${i}" data-f="qty"></td>
+      <td><div class="qty"><button type="button" data-ed="dec" data-i="${i}">${icon('minus')}</button><input class="input sm num-in" type="number" step="any" min="0" value="${it.qty}" data-i="${i}" data-f="qty"><button type="button" data-ed="inc" data-i="${i}">${icon('plus')}</button></div></td>
       <td><input class="input sm num-in" type="number" step="any" min="0" value="${it.price}" data-i="${i}" data-f="price" ${ED.refId ? 'readonly' : ''}></td>
       <td><input class="input sm num-in" type="number" step="any" min="0" value="${it.discount || 0}" data-i="${i}" data-f="discount" ${ED.refId ? 'readonly' : ''}></td>
       ${!isSales && ED.type === 'purchase' ? `<td><input class="input sm" type="date" value="${it.expiry || ''}" data-i="${i}" data-f="expiry"></td>` : ''}
@@ -199,9 +209,18 @@ function docEditor(kind, preset = {}) {
     const code = v.split('|')[0].trim().toLowerCase();
     const p = DB.all('products').find(x => String(x.code).toLowerCase() === code || x.barcode === v) || DB.all('products').find(x => norm(loc(x)) === norm(v));
     if (!p) { toast(t('notFound'), 'err'); return; }
-    const line = ED.items.find(i => i.productId === p.id);
-    if (line) line.qty = round(+line.qty + 1); else ED.items.push({ productId: p.id, qty: 1, price: isSales ? +p.price : +p.cost, discount: 0 });
+    const exp = ($('#ed-exp', root) || {}).value || '';
+    const line = ED.items.find(i => i.productId === p.id && (i.expiry || '') === exp && (isSales || +i.price === +p.cost || i.price === undefined));
+    if (line) line.qty = round(+line.qty + 1); else ED.items.push({ productId: p.id, qty: 1, price: isSales ? +p.price : +p.cost, discount: 0, ...(exp ? { expiry: exp } : {}) });
     inp.value = ''; paint(); inp.focus();
+  };
+  const scanReturn = () => { // returns: each scan adds 1 to that item (first scan switches from "everything" to "only what is scanned")
+    const inp = $('#ed-scan', root); const v = inp.value.trim(); inp.value = ''; if (!v) return;
+    const p = DB.all('products').find(x => x.barcode === v || String(x.code).toLowerCase() === v.toLowerCase());
+    const line = p && ED.items.find(i => i.productId === p.id); if (!line) { toast(t('notInInvoice'), 'err'); return; }
+    if (!ED.scanned) { ED.items.forEach(i => { i.qty = 0; }); ED.scanned = true; }
+    if (+line.qty + 1 > (ED.maxQty ? ED.maxQty[p.id] || 0 : Infinity) + 0.0005) { toast(`${t('errReturnQty')}: ${prodName(p.id)}`, 'err'); return; }
+    line.qty = round(+line.qty + 1); if ((ED.type === 'return' || ED.editId) && !ED.partyId) ED.paid = docTotal(ED); paint(); inp.focus();
   };
   box.addEventListener('click', e => {
     const b = e.target.closest('[data-ed]'); if (!b) return;
@@ -209,9 +228,16 @@ function docEditor(kind, preset = {}) {
     if (a === 'cancel') closeModal();
     else if (a === 'add') addPicked();
     else if (a === 'del') { ED.items.splice(+b.dataset.i, 1); paint(); }
+    else if (a === 'inc' || a === 'dec') { const it = ED.items[+b.dataset.i]; it.qty = round(Math.max(0, +it.qty + (a === 'inc' ? 1 : -1))); if (it.qty <= 0 && !ED.refId) ED.items.splice(+b.dataset.i, 1); if ((ED.type === 'return' || ED.editId) && !ED.partyId) ED.paid = docTotal(ED); paint(); }
+    else if (a === 'newparty') { const np = $('#ed-np', root); np.hidden = !np.hidden; if (!np.hidden) $('input', np).focus(); }
+    else if (a === 'np-save') { // quick new customer / supplier without leaving the invoice
+      const col = isSales ? 'customers' : 'suppliers'; const name = $('#np-name', root).value.trim(); if (!name) { $('#np-name', root).focus(); return; }
+      const r = DB.insert(col, { code: DB.nextCode(col, 'code', isSales ? 'CUS' : 'SUP'), name, nameEn: '', phone: $('#np-phone', root).value.trim(), openingBalance: 0, creditLimit: 0, active: true });
+      const sel = $('#ed-party', root); sel.insertAdjacentHTML('beforeend', `<option value="${r.id}">${esc(loc(r))}</option>`); sel.value = r.id; ED.partyId = r.id;
+      $('#ed-np', root).hidden = true; $('#np-name', root).value = ''; $('#np-phone', root).value = ''; toast(t('saved')); }
     else if (a === 'save') saveDoc(root);
   });
-  box.addEventListener('keydown', e => { if (e.target.id === 'ed-pick' && e.key === 'Enter') { e.preventDefault(); addPicked(); } });
+  box.addEventListener('keydown', e => { if (e.target.id === 'ed-pick' && e.key === 'Enter') { e.preventDefault(); addPicked(); } if (e.target.id === 'ed-scan' && e.key === 'Enter') { e.preventDefault(); scanReturn(); } });
   box.addEventListener('input', e => {
     const el = e.target;
     if (el.dataset.f) { const it = ED.items[+el.dataset.i]; it[el.dataset.f] = el.dataset.f === 'expiry' ? el.value : (el.value === '' ? 0 : +el.value); el.closest('tr').querySelector('.lt').textContent = money(lineTotal(it));
@@ -243,7 +269,7 @@ function saveDoc(root) {
     const p = DB.get('products', it.productId); if (!p) return; const q0 = Math.max(0, stockOf(p.id)), c0 = +p.cost || 0, net = +it.qty ? lineTotal(it) / +it.qty : +it.price;
     p.cost = round((q0 * c0 + +it.qty * net) / (q0 + +it.qty || 1));
   });
-  const prefix = isSales ? (ED.type === 'return' ? 'SR' : 'S') : (ED.type === 'return' ? 'PR' : 'P');
+  const prefix = isSales ? (ED.type === 'return' ? 'SR' : salesPrefix()) : (ED.type === 'return' ? 'PR' : 'P');
   const doc = { number: orig ? orig.number : DB.nextCode(ED.kind, 'number', prefix), type: ED.type, refId: ED.refId || '', date: ED.date, items: ED.items.map(it => ({ productId: it.productId, qty: +it.qty, price: +it.price, discount: +it.discount || 0, cost: it.cost ?? (+DB.get('products', it.productId)?.cost || 0), ...(it.expiry ? { expiry: it.expiry } : {}) })),
     discount: +ED.discount || 0, taxRate: +ED.taxRate || 0, paid: round(+ED.paid || 0), method: ED.method, notes: ED.notes, user: USER.username };
   if (isSales) doc.customerId = ED.partyId; else { doc.supplierId = ED.partyId; doc.supplierRef = ED.supplierRef; }
@@ -280,14 +306,15 @@ function renderDoc(p) {
       ${isSales ? `<button class="btn ghost" data-act="doc-print" data-kind="${kind}" data-id="${d.id}" data-size="80mm">${icon('receipt')}<span>${t('receipt80')}</span></button>` : ''}
       ${isSales ? `<button class="btn wa" data-act="wa-doc" data-id="${d.id}">${icon('whatsapp')}<span>${t('waSendShort')}</span></button>` : ''}
       ${d.type !== 'return' && hasPerm('editInvoice') && !returns.length ? `<button class="btn ghost" data-act="doc-edit" data-kind="${kind}" data-id="${d.id}">${icon('edit')}<span>${t('edit')}</span></button>` : ''}
-      ${d.type !== 'return' && can(ENT[kind].edit) && hasPerm('returns') ? `<button class="btn ghost" data-act="doc-return" data-kind="${kind}" data-id="${d.id}">${icon('undo')}<span>${t('makeReturn')}</span></button>` : ''}
+      ${d.type !== 'return' && can(ENT[kind].edit) && hasPerm(isSales ? 'returns' : 'purchaseReturns') ? `<button class="btn ghost" data-act="doc-return" data-kind="${kind}" data-id="${d.id}">${icon('undo')}<span>${t('makeReturn')}</span></button>` : ''}
       ${can(['admin']) ? `<button class="btn ghost danger-t" data-act="crud-del" data-key="${kind}" data-id="${d.id}">${icon('trash')}<span>${t('delete')}</span></button>` : ''}`)}
     <div class="grid-3">
       ${card(t(isSales ? 'f_customerId' : 'f_supplierId'), `<div class="info-grid one"><div><span>${t('f_name')}</span><b>${pid ? `<a class="link" href="#/statement/${isSales ? 'customer' : 'supplier'}/${pid}">${esc(partyName(partyCol, pid))}</a>` : esc(t('walkIn'))}</b></div>
         ${pid ? `<div><span>${t('f_phone')}</span><b class="ltr">${esc(DB.get(partyCol, pid)?.phone || '—')}</b></div><div><span>${t('f_balance')}</span><b>${balanceFmt(isSales ? customerBalance(pid) : supplierBalance(pid), isSales ? 'c' : 's')}</b></div>` : ''}
         ${d.supplierRef ? `<div><span>${t('f_supplierRef')}</span><b class="ltr">${esc(d.supplierRef)}</b></div>` : ''}</div>`)}
       ${card(t('payment'), `<div class="info-grid one"><div><span>${t('f_status')}</span><b>${badge(docStatus(d))}</b></div><div><span>${t('f_method')}</span><b>${t('opt_' + d.method)}</b></div>
-        <div><span>${t(d.type === 'return' ? 'refundAmount' : 'f_paid')}</span><b>${fmtMoney(d.paid)}</b></div><div><span>${t('f_due')}</span><b>${fmtMoney(Math.max(0, docDue(d)))}</b></div></div>`)}
+        <div><span>${t(d.type === 'return' ? 'refundAmount' : 'f_paid')}</span><b>${fmtMoney(d.paid)}</b></div><div><span>${t('f_due')}</span><b>${fmtMoney(d.type === 'return' ? Math.max(0, docDue(d)) : docRemaining(d))}</b></div>
+        ${d.type !== 'return' && pid && docRemaining(d) > 0.0005 && hasPerm('collect') ? `<div><button class="btn primary sm" data-act="pay-debt" data-k="${isSales ? 'c' : 's'}" data-pid="${pid}" data-doc="${d.id}">${icon('money')}<span>${t('payDebt')}</span></button></div>` : ''}</div>`)}
       ${card(t('details'), `<div class="info-grid one"><div><span>${t('f_type')}</span><b>${badge(d.type)}</b></div>${ref ? `<div><span>${t('returnOf')}</span><b><a class="link ltr" href="#/doc/${kind}/${ref.id}">${esc(ref.number)}</a></b></div>` : ''}
         ${returns.length ? `<div><span>${t('returnsLbl')}</span><b>${returns.map(r => `<a class="link ltr" href="#/doc/${kind}/${r.id}">${esc(r.number)}</a>`).join(' · ')}</b></div>` : ''}<div><span>${t('byUser')}</span><b>${esc(d.user || '—')}</b></div>${d.notes ? `<div><span>${t('f_notes')}</span><b>${esc(d.notes)}</b></div>` : ''}</div>`)}
     </div>
@@ -414,7 +441,9 @@ function renderReports(p) {
   const fin = can(['admin', 'accountant']);
   return `${pageHead(t('nav_reports'), t('sub_reports'), `<button class="btn ghost" data-act="rep-export" data-what="sales" data-from="${from}" data-to="${to}">${icon('download')}<span>${t('nav_sales')}</span></button>
       <button class="btn ghost" data-act="rep-export" data-what="products" data-from="${from}" data-to="${to}">${icon('download')}<span>${t('topProducts')}</span></button>
-      <button class="btn ghost" data-act="rep-export" data-what="stock">${icon('download')}<span>${t('stockReport')}</span></button>`)}
+      <button class="btn ghost" data-act="rep-export" data-what="stock">${icon('download')}<span>${t('stockReport')}</span></button>
+      <button class="btn primary" data-act="rep-xlsx" data-from="${from}" data-to="${to}">${icon('download')}<span>${t('excelReport')}</span></button>
+      <a class="btn ghost" href="#/logs?tab=returns">${icon('undo')}<span>${t('log_returns')}</span></a><a class="btn ghost" href="#/logs?tab=debts">${icon('money')}<span>${t('log_debts')}</span></a>`)}
     <div class="card"><div class="toolbar"><div class="tabs">${periods.map(x => `<a class="tab ${per === x ? 'on' : ''}" href="#/reports?period=${x}">${t('per_' + x)}</a>`).join('')}</div>
       ${per === 'custom' ? `<label class="sel"><span>${t('from')}</span><input class="input sm" type="date" value="${from}" data-chg="nav-param" data-param="from"></label><label class="sel"><span>${t('to')}</span><input class="input sm" type="date" value="${to}" data-chg="nav-param" data-param="to"></label>` : `<span class="pill">${fmtDate(from)} → ${fmtDate(to)}</span>`}</div>
     <div class="pl">${[['revenue', pr.revenue, ''], ['cogs', -pr.cogs, ''], ['grossProfit', pr.gross, 'b'], ['nav_expenses', -pr.expenses, ''], ['netProfit', pr.net, 'big']].map(([k, v, c]) => `<div class="pl-row ${c} ${v < 0 ? 'neg' : ''}"><span>${t(k)}</span><b>${fmtMoney(v)}</b></div>`).join('')}
@@ -475,8 +504,10 @@ function renderSettings() {
       <label class="field"><span>${t('f_accent')}</span><div class="row-in"><input class="input color" type="color" id="set-accent" value="${esc(st.accent || '#059669')}"><button class="btn ghost sm" type="button" data-act="accent-reset">${t('default')}</button></div></label></div>
       <div class="form-actions"><button class="btn primary" type="button" data-act="settings-sec-save">${icon('check')}<span>${t('save')}</span></button></div>`)}
     ${USER.role === 'admin' ? card(t('newYear'), `<p class="hint">${t('newYearHint')}</p><div class="btn-row"><button class="btn danger" data-act="new-year">${icon('refresh')}<span>${t('newYear')}</span></button></div>`) : ''}
+    ${printSettingsCard()}
     ${waSettingsCard()}
     ${netSettingsCard()}
+    ${backupsCard()}
     ${card(t('dataManagement'), `<p class="hint">${t('dataHint')}</p><div class="btn-row">
       <button class="btn ghost" data-act="backup">${icon('download')}<span>${t('backup')}</span></button>
       <label class="btn ghost">${icon('upload')}<span>${t('restore')}</span><input type="file" accept="application/json,.json" hidden data-chg="restore"></label>

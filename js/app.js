@@ -32,16 +32,21 @@ const MENU = [
     { id: 'treasury', icon: 'vault', roles: ['admin', 'accountant'] },
     { id: 'expenses', icon: 'wallet', roles: ['admin', 'accountant'] },
     { id: 'reports', icon: 'chart', roles: ['admin', 'accountant'] },
+    { id: 'accounts', icon: 'scale', roles: ['admin', 'accountant'] },
+    { id: 'logs', icon: 'clipboard', roles: ['admin', 'accountant', 'storekeeper', 'cashier'] },
   ] },
   { g: 'g_system', items: [
     { id: 'users', icon: 'shield', roles: ['admin'] },
     { id: 'settings', icon: 'settings', roles: ['admin'] },
   ] },
 ];
-const PAGES = { dashboard: renderDashboard, pos: renderPOS, doc: renderDoc, statement: renderStatement, item: renderItem, treasury: renderTreasury, reports: renderReports, messages: renderMessages, expiry: renderExpiry, stockcount: renderStockCount, labels: renderLabels, settings: renderSettings };
+const PAGES = { accounts: p => renderAccounts(p), logs: p => renderLogs(p), dashboard: renderDashboard, pos: renderPOS, doc: renderDoc, statement: renderStatement, item: renderItem, treasury: renderTreasury, reports: renderReports, messages: renderMessages, expiry: renderExpiry, stockcount: renderStockCount, labels: renderLabels, settings: renderSettings };
 const PAGE_ROLES = { doc: ['admin', 'cashier', 'accountant', 'storekeeper'], statement: ['admin', 'cashier', 'accountant', 'storekeeper'], item: ALL };
 function pageRoles(id) { if (PAGE_ROLES[id]) return PAGE_ROLES[id]; for (const g of MENU) for (const i of g.items) if (i.id === id) return i.roles; return null; }
-const homePage = () => (USER.role === 'cashier' ? 'pos' : 'dashboard');
+/* pages that also need a permission (a custom user may have more or fewer than the role) */
+const PAGE_PERM = { dashboard: 'viewDashboard', pos: 'createSale', sales: 'viewSales', receipts: 'collect', disbursements: 'collect', products: 'viewStock', adjustments: 'adjustStock', stockcount: 'adjustStock', treasury: 'finance', expenses: 'finance', reports: 'finance', accounts: 'finance' };
+function pageAllowed(id) { const r = pageRoles(id); return !!r && r.includes(USER.role) && (!PAGE_PERM[id] || hasPerm(PAGE_PERM[id])); }
+const homePage = () => { const pref = USER.role === 'cashier' ? ['pos', 'dashboard'] : ['dashboard', 'pos']; for (const g of [...pref, ...MENU.flatMap(x => x.items.map(i => i.id))]) if (pageAllowed(g)) return g; return 'settings'; };
 
 function parseHash() {
   const h = location.hash.replace(/^#\/?/, ''); const [path, qs] = h.split('?'); const parts = path.split('/').filter(Boolean).map(decodeURIComponent);
@@ -95,7 +100,7 @@ const NAV_PARENT = { doc: p => (p.sub === 'purchases' ? 'purchases' : 'sales'), 
 function sidebar(page, params) {
   const active = NAV_PARENT[page] ? NAV_PARENT[page](params) : page;
   return `<aside class="sidebar"><div class="brand">${LOGO}<div><b>${t('appName')}</b><small>${esc(loc(S(), 'businessName'))}</small></div></div>
-    <nav>${MENU.map(g => { const items = g.items.filter(i => i.roles.includes(USER.role)); if (!items.length) return '';
+    <nav>${MENU.map(g => { const items = g.items.filter(i => pageAllowed(i.id)); if (!items.length) return '';
       return `<div class="nav-g"><span>${t(g.g)}</span>${items.map(i => `<a href="#/${i.id}" class="nav-i ${active === i.id ? 'on' : ''}">${icon(i.icon)}<span>${t('nav_' + i.id)}</span>${i.id === 'products' && lowStock().length ? `<em class="nb">${lowStock().length}</em>` : ''}</a>`).join('')}</div>`; }).join('')}</nav>
     <div class="side-foot">${icon('vault')} ${t('acc_cash')}: <b>${can(['admin', 'accountant']) ? moneyText(accountBalance('cash')) : '•••'}</b></div></aside>`;
 }
@@ -103,7 +108,7 @@ function topbar(page, params) {
   const title = { doc: t('document'), statement: t('statement'), item: t('itemCard') }[page] || t('nav_' + page);
   return `<header class="topbar"><button class="icon-btn only-m" data-act="menu">${icon('menu')}</button>
     <div class="crumbs"><span>${t('appName')}</span><b>${title}</b></div><span class="grow"></span>
-    ${page !== 'pos' && can(['admin', 'cashier']) ? `<a class="btn primary sm" href="#/pos">${icon('cart')}<span>${t('nav_pos')}</span></a>` : ''}
+    ${page !== 'pos' && pageAllowed('pos') ? `<a class="btn primary sm" href="#/pos">${icon('cart')}<span>${t('nav_pos')}</span></a>` : ''}
     ${netBadge()}<button class="btn ghost sm" data-act="lang" title="Language">${icon('globe')}<span>${LANG === 'ar' ? 'EN' : 'ع'}</span></button>
     <button class="icon-btn" data-act="theme" title="${t('theme')}">${icon(isDark() ? 'sun' : 'moon')}</button>
     <div class="user-menu"><button class="user-b" data-act="user-menu">${avatar(USER)}<div><b>${esc(loc(USER))}</b><small>${t('role_' + USER.role)}</small></div></button>
@@ -117,7 +122,7 @@ function render() {
   if (!USER) { renderLogin(); return; }
   let { page, params } = parseHash();
   const roles = pageRoles(page);
-  if (!page || !roles || !roles.includes(USER.role)) { page = homePage(); history.replaceState(null, '', '#/' + page); params = {}; }
+  if (!page || !roles || !roles.includes(USER.role) || (PAGE_PERM[page] && !hasPerm(PAGE_PERM[page]))) { page = homePage(); history.replaceState(null, '', '#/' + page); params = {}; }
   if (ENT[page] && params.period) crudState(page).f.period = params.period;
   let content;
   try { content = PAGES[page] ? PAGES[page](params) : renderCrud(page); }
@@ -126,6 +131,8 @@ function render() {
   $('#app').innerHTML = `<div class="shell ${page === 'pos' ? 'is-pos' : ''}">${sidebar(page, params)}<div class="side-back" data-act="menu"></div><div class="main">${topbar(page, params)}<main class="content" id="content">${content}</main></div></div>`;
   window.scrollTo(0, scrollY);
   if (page === 'pos') setTimeout(() => $('#pos-q')?.focus(), 30);
+  if (page === 'settings') setTimeout(() => { fillPrinters(); fillBackups(); }, 0);
+  autoBackup(); // once a day (no-op when already done today)
 }
 
 /* ---------- actions ---------- */
@@ -213,6 +220,7 @@ Object.assign(ACT, {
     if (mode === 'client') { cfg.host = $('#net-host').value.trim(); cfg.key = $('#net-key').value.trim(); if (!cfg.host || !cfg.key) { toast(t('netNeedHostKey'), 'err'); return; } }
     confirmBox(t('netRestartConfirm'), () => window.dalalaNet.set(cfg)); },
 });
+Object.assign(ACT, ACT_V22);
 Object.assign(ACT, ACT_EXTRA, { 'wa-customer': el => waCustomerCompose(el.dataset.id), 'wa-doc': el => waDocCompose(el.dataset.id) });
 const CHG = {
   'net-mode': () => netModeFields(),
@@ -231,7 +239,7 @@ const CHG = {
     const file = el.files[0]; if (!file) return;
     const rd = new FileReader();
     rd.onload = () => { try { const d = JSON.parse(rd.result); if (!d.version || !Array.isArray(d.products) || !Array.isArray(d.sales)) throw new Error('bad');
-      confirmBox(t('restoreConfirm'), () => { DB.d = d; DB.save(); DB.load(); restoreSession(); if (!USER) { logout(); return; } toast(t('done')); render(); }); }
+      confirmBox(t('restoreConfirm'), () => restoreData(d)); }
       catch (e) { toast(t('invalidFile'), 'err'); } };
     rd.readAsText(file);
   },
@@ -246,6 +254,7 @@ const INP = {
   'crud-search': el => { clearTimeout(searchTimer); searchTimer = setTimeout(() => { const st = crudState(el.dataset.key); st.q = el.value; st.page = 1; refreshCrud(el.dataset.key); }, 150); },
   'pos-search': el => { POS.q = el.value; clearTimeout(searchTimer); searchTimer = setTimeout(() => { const g = $('#pos-grid'); if (g) g.innerHTML = posGrid(); }, 120); },
 };
+Object.assign(INP, INP_V22);
 
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
@@ -263,7 +272,7 @@ document.addEventListener('keydown', e => {
   if (ctrl && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); lockScreen(); return; }
   if (e.key === 'F11') { e.preventDefault(); if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); return; }
   if (e.key === 'F5') { e.preventDefault(); if (NET_BOOT) { location.reload(); return; } DB.load(); restoreSession(); render(); return; }
-  if (e.key === 'F2' && parseHash().page !== 'pos' && can(['admin', 'cashier'])) { e.preventDefault(); location.hash = '#/pos'; return; }
+  if (e.key === 'F2' && parseHash().page !== 'pos' && pageAllowed('pos')) { e.preventDefault(); location.hash = '#/pos'; return; }
   if (parseHash().page !== 'pos' || $('#modal-root.open')) return;
   if (e.key === 'F8') { e.preventDefault(); posHold(); return; }
   if (e.key === 'F4') { e.preventDefault(); posHeldList(); return; }
@@ -277,5 +286,5 @@ render = function () { if (window.__afterDelete) { const h = window.__afterDelet
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
 
 if (!(window.dalalaDesktop && window.dalalaDesktop.licensed)) { try { window.stop(); } catch (e) {} document.documentElement.innerHTML = '<head><meta charset="utf-8"><title>Dalala</title></head><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e2e8f0;font-family:Segoe UI,Tahoma,sans-serif;text-align:center;padding:20px"><div><div style="font-size:54px">🔒</div><h2 style="margin:10px 0">هذه النسخة تعمل فقط من خلال البرنامج المرخّص</h2><p style="color:#94a3b8">This copy only runs inside the licensed Dalala application.</p></div></body>'; throw new Error('unlicensed'); }
-if (NET_BOOT) NET_BOOT(() => { restoreSession(); render(); });
-else { DB.load(); restoreSession(); render(); }
+if (NET_BOOT) NET_BOOT(() => { restoreSession(); render(); autoBackup(); });
+else { DB.load(); restoreSession(); render(); autoBackup(); }

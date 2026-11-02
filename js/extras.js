@@ -71,7 +71,8 @@ function writeOffExpired(pid) {
 function openCount() { return DB.all('stockCounts').find(c => c.status === 'open'); }
 function renderStockCount(p) {
   const c = openCount(); const past = DB.all('stockCounts').filter(x => x.status === 'posted').sort((a, b) => b.date.localeCompare(a.date));
-  if (!c) return `${pageHead(t('nav_stockcount'), t('sub_stockcount'), can(['admin', 'storekeeper']) ? `<button class="btn primary" data-act="count-start">${icon('plus')}<span>${t('countStart')}</span></button>` : '')}
+  if (!c) return `${pageHead(t('nav_stockcount'), t('sub_stockcount'), `${USER.role === 'admin' ? `<button class="btn ghost" data-act="year-close">${icon('vault')}<span>${t('yearClose')}</span></button>` : ''}<a class="btn ghost" href="#/logs?tab=closings&period=all">${icon('clipboard')}<span>${t('log_closings')}</span></a>
+      ${can(['admin', 'storekeeper']) ? `<button class="btn primary" data-act="count-start">${icon('plus')}<span>${t('countStart')}</span></button>` : ''}`)}
     <div class="card"><p class="hint">${t('countHint')}</p></div>
     ${card(t('countHistory'), past.length ? `<ul class="list">${past.map(x => `<li>${icon('clipboard')}<div><b class="ltr">${esc(x.number)}</b><small>${fmtDate(x.date)} → ${fmtDate(x.postedAt)} · ${fmtNum(x.diffs || 0)} ${t('countDiffs')} · ${esc(x.user || '')}</small></div><b>${fmtMoney(x.diffValue || 0)}</b><button class="btn ghost sm" data-act="count-print" data-id="${x.id}">${icon('printer')}</button></li>`).join('')}</ul>` : emptyState(t('noData')))}`;
   const q = norm(p.q || ''); const cat = p.cat || '';

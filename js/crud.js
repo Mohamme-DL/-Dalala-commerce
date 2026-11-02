@@ -14,6 +14,7 @@ function fieldOpts(f) {
 }
 const fieldLabel = f => t('f_' + f.k);
 function can(roles) { return !!USER && (USER.role === 'admin' || (roles || ['admin']).includes(USER.role)); }
+const canEdit = key => can(ENT[key].edit) && (!ENT[key].editPerm || hasPerm(ENT[key].editPerm));
 
 /* ---------- cell rendering ---------- */
 function cellText(f, r) {
@@ -46,7 +47,7 @@ const UI = {};
 function crudState(key) { return (UI[key] = UI[key] || { q: '', f: {}, page: 1, sort: null, dir: 1 }); }
 function crudRows(key) {
   const cfg = ENT[key], st = crudState(key);
-  let rows = DB.all(key).slice();
+  let rows = DB.all(key).slice(); if (cfg.hidden) rows = rows.filter(r => !cfg.hidden(r));
   for (const [fk, v] of Object.entries(st.f)) {
     if (v === '' || v == null) continue;
     const flt = (cfg.filters || []).find(x => x.k === fk);
@@ -62,7 +63,7 @@ function crudRows(key) {
 }
 
 function renderCrud(key, { title, embedded } = {}) {
-  const cfg = ENT[key], st = crudState(key), editable = can(cfg.edit);
+  const cfg = ENT[key], st = crudState(key), editable = canEdit(key);
   const filters = (cfg.filters || []).map(fl => {
     const f = cfg.fields.find(x => x.k === fl.k) || {};
     const opts = fl.opts ? fl.opts.map(v => ({ v, l: t('opt_' + v) })) : f.type === 'ref' ? refOptions(f) : fieldOpts(f);
@@ -71,7 +72,7 @@ function renderCrud(key, { title, embedded } = {}) {
   }).join('');
   const tools = (cfg.tools || []).filter(tl => can(tl.roles)).map((tl, i) => `<button class="btn ghost" data-act="crud-tool" data-key="${key}" data-i="${i}">${icon(tl.icon)}<span>${t(tl.label)}</span></button>`).join('');
   return `${embedded ? '' : pageHead(title || t('nav_' + key), t('sub_' + key), `
-      <button class="btn ghost" data-act="crud-print" data-key="${key}">${icon('printer')}<span>${t('print')}</span></button><button class="btn ghost" data-act="crud-export" data-key="${key}">${icon('download')}<span>${t('export')}</span></button>${tools}
+      <button class="btn ghost" data-act="crud-print" data-key="${key}">${icon('printer')}<span>${t('print')}</span></button><button class="btn ghost" data-act="crud-export" data-key="${key}">${icon('download')}<span>Excel</span></button><button class="btn ghost" data-act="crud-word" data-key="${key}">${icon('file')}<span>Word</span></button>${tools}
       ${editable ? `<button class="btn primary" data-act="crud-add" data-key="${key}">${icon('plus')}<span>${t('add')}</span></button>` : ''}`)}
     <div class="card">
       <div class="toolbar">
@@ -85,7 +86,7 @@ function renderCrud(key, { title, embedded } = {}) {
 
 const PAGE_SIZE = 15;
 function crudTable(key) {
-  const cfg = ENT[key], st = crudState(key), rows = crudRows(key), editable = can(cfg.edit);
+  const cfg = ENT[key], st = crudState(key), rows = crudRows(key), editable = canEdit(key);
   const pages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE)); st.page = Math.min(st.page, pages);
   const slice = rows.slice((st.page - 1) * PAGE_SIZE, st.page * PAGE_SIZE);
   const cols = cfg.fields.filter(f => f.list);
@@ -113,7 +114,8 @@ function refreshCrud(key) { const el = $('#crud-' + key); if (el) el.innerHTML =
 
 function exportCrud(key) {
   const cfg = ENT[key]; const cols = cfg.fields.filter(f => f.type !== 'password');
-  exportCSV(key, cols.map(fieldLabel), crudRows(key).map(r => cols.map(f => cellText(f, r))));
+  const val = (f, r) => { if (f.money || (f.type === 'number' && !f.signed)) { const v = f.type === 'calc' ? f.get(r) : r[f.k]; return v === '' || v == null ? '' : round(+v); } if (f.type === 'number') return r[f.k] === '' ? '' : +r[f.k]; return cellText(f, r); };
+  exportCSV(key, cols.map(fieldLabel), crudRows(key).map(r => cols.map(f => val(f, r))), { sheet: t('nav_' + key) });
 }
 
 /* ---------- Form ---------- */
@@ -163,7 +165,8 @@ function openForm(key, id, preset = {}) {
       let v = f.type === 'bool' ? el.checked : f.type === 'multiref' ? [...el.selectedOptions].map(o => o.value) : f.type === 'multiselect' ? [...form.querySelectorAll(`input[name="${f.k}"]:checked`)].map(o => o.value) : el.value.trim();
       if (f.type === 'number' || f.num) v = v === '' ? '' : Number(v);
       if (f.req && (v === '' || v == null)) { err = `${t('errRequired')}: ${fieldLabel(f)}`; el.focus(); break; }
-      if (f.unique && v !== '' && DB.all(key).some(r => r.id !== id && String(r[f.k]).toLowerCase() === String(v).toLowerCase())) { err = `${t('errUnique')}: ${fieldLabel(f)}`; el.focus(); break; }
+      const dup = f.unique && v !== '' && DB.all(key).find(r => r.id !== id && String(r[f.k]).toLowerCase() === String(v).toLowerCase());
+      if (dup) { err = `${t('errUnique')}: ${fieldLabel(f)} — ${t('usedBy')} «${dup.deleted ? t('deletedItem') + ' ' : ''}${REF_LABEL[key] ? REF_LABEL[key](dup) : loc(dup) !== '—' ? loc(dup) : dup.number || dup.code || ''}»`; el.focus(); break; }
       out[f.k] = v;
     }
     if (!err && cfg.validate) err = cfg.validate({ ...rec, ...out }, old);
@@ -180,7 +183,8 @@ function openForm(key, id, preset = {}) {
 function deleteRecord(key, id) {
   const block = ENT[key].blockDelete && ENT[key].blockDelete(id);
   if (block) { toast(block, 'err'); return; }
-  confirmBox(t('confirmDelete'), () => {
+  confirmBox(key === 'products' ? t('confirmDeleteProduct') : t('confirmDelete'), () => {
+    if (ENT[key].softDelete && ENT[key].softDelete(id)) { DB.update(key, id, { deleted: true, active: false, deletedAt: today() }); toast(t('deleted')); render(); return; } // keeps the name on old invoices
     DB.remove(key, id);
     if (ENT[key].onDelete) ENT[key].onDelete(id);
     DB.save(); toast(t('deleted')); render();

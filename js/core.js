@@ -195,10 +195,7 @@ function downloadFile(name, content, type) {
   a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 800);
 }
-function exportCSV(name, headers, rows) {
-  const q = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
-  downloadFile(`${name}-${today()}.csv`, '﻿' + [headers, ...rows].map(r => r.map(q).join(',')).join('\r\n'), 'text/csv;charset=utf-8');
-}
+/* exportCSV / exportWord live in office.js (real .xlsx / .docx files) */
 function printHTML(html, mode = '') {
   const pa = $('#print-area');
   pa.setAttribute('dir', LANG === 'ar' ? 'rtl' : 'ltr');

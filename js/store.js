@@ -3,7 +3,7 @@
 
 const DB_KEY = 'dalala_commerce_db_v1';
 const COLS = ['products', 'categories', 'customers', 'suppliers', 'sales', 'purchases', 'receipts', 'disbursements',
-  'expenses', 'cashMoves', 'adjustments', 'users', 'held', 'stockCounts'];
+  'expenses', 'cashMoves', 'adjustments', 'users', 'held', 'stockCounts', 'quickGroups', 'closings'];
 
 const DB = {
   d: null, v: 0,
@@ -54,7 +54,7 @@ function defaultSettings() {
     crNo: '', taxNo: '', chamberNo: '', licenseNo: '', municipality: 'طرابلس',
     address: 'طرابلس — شارع الجمهورية', addressEn: 'Tripoli — Al-Jumhuriya St.', phone: '+218 21 000 0000', email: 'sales@dalala.ly',
     currency: 'د.ل', currencyEn: 'LYD', waCountryCode: '218', decimals: 3, taxRate: 0, allowNegativeStock: false, receiptSize: '80mm',
-    receiptFooter: 'شكراً لتسوقكم معنا — البضاعة المباعة تستبدل خلال 3 أيام بالفاتورة', receiptFooterEn: 'Thank you for shopping with us — items can be exchanged within 3 days with the receipt', printLang: 'ui', openingCash: 5000, openingBank: 20000,
+    receiptFooter: 'شكراً لتسوقكم معنا — البضاعة المباعة تستبدل خلال 3 أيام بالفاتورة', receiptFooterEn: 'Thank you for shopping with us — items can be exchanged within 3 days with the receipt', printLang: 'ui', openingCash: 5000, openingBank: 20000, invoicePrefix: 'S',
   };
 }
 

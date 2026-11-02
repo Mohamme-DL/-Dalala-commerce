@@ -42,9 +42,21 @@ async function loginAsync(username, password) {
 }
 
 /* ---------- permissions ---------- */
-const PERMS = ['discount', 'changePrice', 'returns', 'editInvoice', 'viewCost', 'deleteDocs'];
-const ROLE_PERMS = { admin: PERMS, cashier: ['discount'], accountant: ['discount', 'returns', 'viewCost', 'editInvoice'], storekeeper: ['viewCost'] };
-function hasPerm(p) { if (!USER) return false; if (USER.role === 'admin') return true; const list = Array.isArray(USER.perms) && USER.perms.length ? USER.perms : ROLE_PERMS[USER.role] || []; return list.includes(p); }
+/* sales: view invoices, create, discount, change price, returns, edit, delete, collect debts
+   stock: view, add/edit items & prices, manual adjustment · finance: costs, reports, accounts, treasury */
+const PERMS = ['viewDashboard', 'viewSales', 'createSale', 'discount', 'changePrice', 'returns', 'editInvoice', 'deleteDocs', 'collect', 'viewStock', 'editProducts', 'adjustStock', 'purchaseReturns', 'viewCost', 'finance'];
+const PERMS_V1 = ['discount', 'changePrice', 'returns', 'editInvoice', 'viewCost', 'deleteDocs'];
+const ROLE_PERMS = { admin: PERMS,
+  cashier: ['viewSales', 'createSale', 'discount', 'collect', 'viewStock'],
+  accountant: ['viewDashboard', 'viewSales', 'discount', 'returns', 'editInvoice', 'collect', 'viewStock', 'purchaseReturns', 'viewCost', 'finance'],
+  storekeeper: ['viewDashboard', 'viewStock', 'editProducts', 'adjustStock', 'purchaseReturns', 'viewCost'] };
+function hasPerm(p) {
+  if (!USER) return false; if (USER.role === 'admin') return true;
+  const role = ROLE_PERMS[USER.role] || [];
+  if (!(Array.isArray(USER.perms) && USER.perms.length)) return role.includes(p);
+  if (USER.permsV !== 2 && !PERMS_V1.includes(p)) return role.includes(p); // custom list saved before 2.2: new permissions follow the role
+  return USER.perms.includes(p);
+}
 
 /* ---------- password field helpers on the login / setup / lock screens ---------- */
 function pwField(name, label, extra = '') {

@@ -235,7 +235,7 @@ const ENT = {
     filters: [{ k: 'role' }],
     canDelete: r => r.id !== USER.id,
     validate: r => (!isHashed(r.password) && String(r.password).length < 8 ? t('passwordShort8') : null),
-    afterSave: async r => { if (!isHashed(r.password)) { DB.update('users', r.id, { password: await hashPassword(r.password) }); } },
+    afterSave: async r => { if (r.permsV !== 2) DB.update('users', r.id, { permsV: 2 }); if (!isHashed(r.password)) { DB.update('users', r.id, { password: await hashPassword(r.password) }); } },
   },
 };
 
