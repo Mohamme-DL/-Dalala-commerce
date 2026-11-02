@@ -476,6 +476,7 @@ function renderSettings() {
       <div class="form-actions"><button class="btn primary" type="button" data-act="settings-sec-save">${icon('check')}<span>${t('save')}</span></button></div>`)}
     ${USER.role === 'admin' ? card(t('newYear'), `<p class="hint">${t('newYearHint')}</p><div class="btn-row"><button class="btn danger" data-act="new-year">${icon('refresh')}<span>${t('newYear')}</span></button></div>`) : ''}
     ${waSettingsCard()}
+    ${netSettingsCard()}
     ${card(t('dataManagement'), `<p class="hint">${t('dataHint')}</p><div class="btn-row">
       <button class="btn ghost" data-act="backup">${icon('download')}<span>${t('backup')}</span></button>
       <label class="btn ghost">${icon('upload')}<span>${t('restore')}</span><input type="file" accept="application/json,.json" hidden data-chg="restore"></label>

@@ -39,6 +39,17 @@ A modern, bilingual (Arabic / English) point of sale, inventory and accounting s
 | **السنة المالية** | بدء سنة جديدة بتصفير الحركات وترحيل أرصدة المخزون والعملاء والموردين والخزينة، مع نسخة احتياطية تلقائية |
 | **النظام** | المستخدمون والصلاحيات حسب الدور، بيانات المنشأة، العملة والخانات العشرية (3 للدينار)، الضريبة (0% افتراضياً)، النسخ الاحتياطي والاستعادة |
 
+## التشغيل على عدة أجهزة — Several computers, one database
+
+- **الجهاز الرئيسي:** الإعدادات ← «التشغيل على عدة أجهزة» ← جهاز رئيسي ← حفظ وإعادة التشغيل. تظهر بعدها عنوان الجهاز (IP) و**مفتاح الربط**. عند أول تشغيل يطلب ويندوز السماح للبرنامج بالشبكة — اختر «الشبكات الخاصة» ثم «سماح».
+- **كل جهاز فرعي:** الإعدادات ← جهاز فرعي ← أدخل عنوان الجهاز الرئيسي ومفتاح الربط ← اختبار الاتصال ← حفظ وإعادة التشغيل.
+- تُرسل كل عملية حفظ السجلات المتغيّرة فقط، وتصل تعديلات الأجهزة الأخرى خلال ثانية تقريباً. أرقام الفواتير والأكواد تُوحَّد على الجهاز الرئيسي فلا تتكرر.
+- إذا انقطعت الشبكة يواصل الجهاز الفرعي العمل وتُحفظ العمليات في طابور وتُرسل تلقائياً عند عودة الاتصال.
+- قاعدة البيانات المشتركة: `%APPDATA%\Dalala Commerce\shared\shared-db.json` على الجهاز الرئيسي، مع نسخة احتياطية يومية (آخر 30 يوماً) في `shared\backups`.
+- كل جهاز يحتاج مفتاح تفعيل خاص به. المنفذ الافتراضي 47630 (TCP).
+
+On the main computer choose **Main computer (server)**; on the others choose **Branch computer** and enter the main computer's IP and pairing key. Changes are synced record by record over the LAN (long-polling), document numbers are made unique on the server, and a branch keeps working offline with a queue that resends on reconnect.
+
 ## بناء مثبّت ويندوز — Building the Windows installer
 
 ```bash

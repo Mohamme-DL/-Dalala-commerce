@@ -104,7 +104,7 @@ function topbar(page, params) {
   return `<header class="topbar"><button class="icon-btn only-m" data-act="menu">${icon('menu')}</button>
     <div class="crumbs"><span>${t('appName')}</span><b>${title}</b></div><span class="grow"></span>
     ${page !== 'pos' && can(['admin', 'cashier']) ? `<a class="btn primary sm" href="#/pos">${icon('cart')}<span>${t('nav_pos')}</span></a>` : ''}
-    <button class="btn ghost sm" data-act="lang" title="Language">${icon('globe')}<span>${LANG === 'ar' ? 'EN' : 'ع'}</span></button>
+    ${netBadge()}<button class="btn ghost sm" data-act="lang" title="Language">${icon('globe')}<span>${LANG === 'ar' ? 'EN' : 'ع'}</span></button>
     <button class="icon-btn" data-act="theme" title="${t('theme')}">${icon(isDark() ? 'sun' : 'moon')}</button>
     <div class="user-menu"><button class="user-b" data-act="user-menu">${avatar(USER)}<div><b>${esc(loc(USER))}</b><small>${t('role_' + USER.role)}</small></div></button>
       <div class="dropdown" hidden><button data-act="lock">${icon('key')}<span>${t('lockNow')} <kbd>Ctrl+L</kbd></span></button><button data-act="chpass">${icon('key')}<span>${t('changePassword')}</span></button><button data-act="logout" class="danger-t">${icon('logout')}<span>${t('logout')}</span></button></div></div>
@@ -205,8 +205,17 @@ Object.assign(ACT, {
   'accent-reset': () => { delete S().accent; DB.save(); render(); },
   'settings-sec-save': () => { const st = S(); st.autoLockMin = Math.max(0, +$('#set-autolock').value || 0); st.expiryAlertDays = Math.max(1, +$('#set-expdays').value || 30); st.accent = $('#set-accent').value; DB.save(); toast(t('saved')); render(); },
 });
+Object.assign(ACT, {
+  'net-test': async () => { const host = $('#net-host').value.trim(), port = +$('#net-port').value || 47630, key = $('#net-key').value.trim();
+    if (!host) { toast(t('netHostAddr'), 'err'); return; } const r = await window.dalalaNet.test({ host, port, key });
+    toast(r.ok ? (r.keyOk ? t('netTestOk') : t('netBadKey')) : t('netCantReach') + ' — ' + (r.error || ''), r.ok && r.keyOk ? 'ok' : 'err'); },
+  'net-save': () => { const mode = ($('input[name=net-mode]:checked') || {}).value || 'local'; const cfg = { mode, port: +$('#net-port').value || 47630 };
+    if (mode === 'client') { cfg.host = $('#net-host').value.trim(); cfg.key = $('#net-key').value.trim(); if (!cfg.host || !cfg.key) { toast(t('netNeedHostKey'), 'err'); return; } }
+    confirmBox(t('netRestartConfirm'), () => window.dalalaNet.set(cfg)); },
+});
 Object.assign(ACT, ACT_EXTRA, { 'wa-customer': el => waCustomerCompose(el.dataset.id), 'wa-doc': el => waDocCompose(el.dataset.id) });
 const CHG = {
+  'net-mode': () => netModeFields(),
   'crud-filter': el => { const st = crudState(el.dataset.key); st.f[el.dataset.f] = el.value; st.page = 1; if (el.dataset.f === 'period' && parseHash().params.period) { location.hash = '#/' + el.dataset.key; return; } render(); },
   'nav-param': el => setParam(el.dataset.param, el.value),
   'print-lang': el => { PRINT_PICK = el.value; },
@@ -253,7 +262,7 @@ document.addEventListener('keydown', e => {
   const ctrl = e.ctrlKey || e.metaKey;
   if (ctrl && (e.key === 'l' || e.key === 'L')) { e.preventDefault(); lockScreen(); return; }
   if (e.key === 'F11') { e.preventDefault(); if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.(); return; }
-  if (e.key === 'F5') { e.preventDefault(); DB.load(); restoreSession(); render(); return; }
+  if (e.key === 'F5') { e.preventDefault(); if (NET_BOOT) { location.reload(); return; } DB.load(); restoreSession(); render(); return; }
   if (e.key === 'F2' && parseHash().page !== 'pos' && can(['admin', 'cashier'])) { e.preventDefault(); location.hash = '#/pos'; return; }
   if (parseHash().page !== 'pos' || $('#modal-root.open')) return;
   if (e.key === 'F8') { e.preventDefault(); posHold(); return; }
@@ -264,10 +273,9 @@ document.addEventListener('keydown', e => {
 });
 window.addEventListener('hashchange', () => { closeModal(); render(); });
 const _origRender = render;
-render = function () { if (window.__afterDelete) { const h = window.__afterDelete; window.__afterDelete = null; if (!DB.get(parseHash().params.sub || 'sales', parseHash().params.id)) { location.hash = h; return; } } _origRender(); };
+render = function () { if (window.__afterDelete) { const h = window.__afterDelete; window.__afterDelete = null; if (!DB.get(parseHash().params.sub || 'sales', parseHash().params.id)) { location.hash = h; return; } } _origRender(); if (parseHash().page === 'settings' && $('#net-card')) setTimeout(netFillInfo, 0); };
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', () => render());
 
 if (!(window.dalalaDesktop && window.dalalaDesktop.licensed)) { try { window.stop(); } catch (e) {} document.documentElement.innerHTML = '<head><meta charset="utf-8"><title>Dalala</title></head><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#e2e8f0;font-family:Segoe UI,Tahoma,sans-serif;text-align:center;padding:20px"><div><div style="font-size:54px">🔒</div><h2 style="margin:10px 0">هذه النسخة تعمل فقط من خلال البرنامج المرخّص</h2><p style="color:#94a3b8">This copy only runs inside the licensed Dalala application.</p></div></body>'; throw new Error('unlicensed'); }
-DB.load();
-restoreSession();
-render();
+if (NET_BOOT) NET_BOOT(() => { restoreSession(); render(); });
+else { DB.load(); restoreSession(); render(); }

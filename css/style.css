@@ -616,3 +616,22 @@ kbd { font-family: inherit; font-size: 11px; padding: 1px 6px; border-radius: 6p
 .lbl-price { font-size: 9pt; font-weight: 800; }
 @media print { body.labels-mode #print-area { padding: 0; margin: 0; } body.labels-mode .lbl-print .lbl { height: 100%; } }
 @media (max-width: 1000px) { .grid-lbl { grid-template-columns: 1fr; } }
+
+/* ---------- several computers (network) ---------- */
+.net-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.net-badge .ic { width: 15px; height: 15px; }
+.net-badge.on { background: var(--ok-soft); color: var(--ok); }
+.net-badge.off { background: var(--bad-soft); color: var(--bad); }
+.net-boot { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 20px; background: var(--bg); color: var(--text); }
+.net-boot svg:first-child { width: 64px; height: 64px; }
+.net-boot.err b { color: #dc2626; } .net-boot p { color: var(--muted); max-width: 420px; }
+.net-modes { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 12px 0; }
+.net-mode { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 2px solid var(--line); border-radius: 12px; cursor: pointer; }
+.net-mode input { position: absolute; opacity: 0; pointer-events: none; }
+.net-mode small { color: var(--muted); font-size: 12px; }
+.net-mode.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); }
+.net-host-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; padding: 12px; border-radius: 12px; background: var(--panel-2); }
+.net-host-info > div { display: flex; flex-direction: column; gap: 2px; } .net-host-info span { color: var(--muted); font-size: 12px; }
+.net-key { font-size: 18px; letter-spacing: 2px; font-family: Consolas, monospace; }
+@media (max-width: 700px) { .topbar .net-badge span { display: none; } }
+.net-c[hidden], #net-fields [hidden] { display: none !important; }
