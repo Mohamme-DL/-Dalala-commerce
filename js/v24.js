@@ -154,7 +154,7 @@ function importWizard(kind) {
     body().innerHTML = `${bar(2)}<p class="muted">${il('file')}: <b class="ltr">${esc(S.file)}</b> (${esc(S.parsed.format)}) — ${fmtNum(tb.total)} ${il('records')} ${tb.truncated ? il('truncated') : ''}</p>
       ${S.parsed.tables.length > 1 ? `<label class="field"><span>${il('sheet')}</span><select class="input" id="imp-ti">${S.parsed.tables.map((x, i) => `<option value="${i}" ${i === S.ti ? 'selected' : ''}>${esc(x.name)} — ${fmtNum(x.total)}</option>`).join('')}</select></label>` : ''}
       <div class="imp-map"><b class="muted">${il('ourField')}</b><b class="muted">${il('yourCol')}</b><b class="muted">${il('example')}</b>
-        ${F().map(([k, req]) => `<span>${esc(il(k, S.kind))}${req ? ' <i class="req">*</i>' : ''}</span><select class="input sm" data-im="${k}"><option value="">${il('none')}</option>${tb.headers.map((h, i) => `<option value="${i}" ${S.map[k] === i ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select><span class="imp-ex" data-ex="${k}">${esc(S.map[k] != null ? (tb.rows[0] || [])[S.map[k]] || '' : '')}</span>`).join('')}</div>
+        ${F().map(([k, req]) => `<span>${esc(il(k, S.kind))}${req ? ' <i class="req">*</i>' : ''}</span><select class="input sm" data-im="${k}"><option value="">${il('none')}</option>${tb.headers.map((h, i) => `<option value="${i}" ${S.map[k] === i ? 'selected' : ''}>${esc(h)}</option>`).join('')}</select><span class="imp-ex" data-ex="${k}">${esc(S.map[k] != null ? impShow(k, (tb.rows[0] || [])[S.map[k]]) : '')}</span>`).join('')}</div>
       ${!arch ? `<label class="field"><span>${il('exists')}</span><select class="input" id="imp-mode"><option value="skip" ${S.mode === 'skip' ? 'selected' : ''}>${il('skip')}</option><option value="update" ${S.mode === 'update' ? 'selected' : ''}>${il('update')}</option></select></label>` : ''}
       ${arch ? `<label class="field"><span>${il('defDate')}</span><input class="input" type="date" id="imp-date" value="${S.date}"></label><p class="hint">${il('archNote')}</p>` : ''}${S.kind === 'customers' || S.kind === 'suppliers' ? `<p class="hint">${il('balNote')}</p>` : ''}
       <p class="muted">${il('preview')}</p><div class="table-wrap imp-pv"><table class="table compact"><thead><tr>${tb.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${tb.rows.slice(0, 5).map(r => `<tr>${r.map(v => `<td>${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
@@ -214,7 +214,7 @@ function importWizard(kind) {
     const el = e.target;
     if (el.id === 'imp-file' && el.files[0]) take(el.files[0]);
     if (el.id === 'imp-ti') { S.ti = +el.value; S.map = impAutoMap(S.kind, S.parsed.tables[S.ti].headers); step2(); }
-    if (el.dataset.im) { S.map[el.dataset.im] = el.value === '' ? null : +el.value; const ex = $(`[data-ex="${el.dataset.im}"]`, root); const tb = S.parsed.tables[S.ti]; if (ex) ex.textContent = S.map[el.dataset.im] == null ? '' : (tb.rows[0] || [])[S.map[el.dataset.im]] || ''; }
+    if (el.dataset.im) { S.map[el.dataset.im] = el.value === '' ? null : +el.value; const ex = $(`[data-ex="${el.dataset.im}"]`, root); const tb = S.parsed.tables[S.ti]; if (ex) ex.textContent = S.map[el.dataset.im] == null ? '' : impShow(el.dataset.im, (tb.rows[0] || [])[S.map[el.dataset.im]]); }
     if (el.id === 'imp-mode') S.mode = el.value; if (el.id === 'imp-date') S.date = el.value || today();
   });
   root.addEventListener('dragover', e => { if (e.target.closest('#imp-drop')) { e.preventDefault(); e.target.closest('#imp-drop').classList.add('over'); } });
@@ -222,6 +222,7 @@ function importWizard(kind) {
   root.addEventListener('drop', e => { const z = e.target.closest('#imp-drop'); if (!z) return; e.preventDefault(); z.classList.remove('over'); const f = e.dataTransfer?.files?.[0]; if (f) take(f); });
   step1();
 }
+const impShow = (k, v) => (/date/.test(k) && v && impDate(v) ? fmtDate(impDate(v)) : v || ''); // example column: Excel date numbers shown as dates
 function importCard() {
   if (!USER || USER.role !== 'admin') return '';
   return card(`${icon('upload')} ${il('title')}`, `<p class="hint">${il('tip')}</p><div class="btn-row">${Object.keys(IMPF).map(k => `<button class="btn ghost" data-act="import-open" data-kind="${k}">${icon('upload')}<span>${il(k)}</span></button>`).join('')}</div>`);
