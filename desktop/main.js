@@ -139,4 +139,5 @@ app.whenReady().then(async () => {
   state = lic.check(app.getPath('userData'));
   if (state.ok) createMain(); else createActivation();
 });
+app.on('before-quit', () => { if (server) server.flush(); }); // write the shared database to disk before closing
 app.on('window-all-closed', () => { if (server) server.close(); app.quit(); });
