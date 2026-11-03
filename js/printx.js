@@ -60,7 +60,7 @@ function thermalReceipt(kind, d) {
     <div class="rx-head">${st.logo ? '' : PX.logo()}<b>${esc(loc(st, 'businessName'))}</b>${loc(st, 'activity') ? `<small>${esc(loc(st, 'activity'))}</small>` : ''}<small>${esc(loc(st, 'address') || '')}</small>${st.phone ? `<small class="ltr">${esc(st.phone)}</small>` : ''}${st.taxNo ? `<small>${t('f_taxNo')}: ${esc(st.taxNo)}</small>` : ''}</div>
     <div class="rx-title">${esc(docLabel(kind, d))}<span class="ltr">${esc(d.number)}</span></div>
     <div class="rx-meta"><span>${t('f_date')}: <b>${fmtDate(d.date)} ${PX.time(d)}</b></span>${d.user ? `<span>${t('cashierLbl')}: <b>${esc(PX.userName(d.user))}</b></span>` : ''}<span>${t(isSales ? 'f_customerId' : 'f_supplierId')}: <b>${esc(party ? loc(party) : t('walkIn'))}</b></span></div>
-    <div class="rx-items">${d.items.map((it, i) => `<div class="rx-it"><div class="rx-nm">${i + 1}. ${esc(prodName(it.productId))}</div><div class="rx-ln"><span><span class="ltr">${fmtNum(it.qty, 3)} × ${money(it.price)}</span>${+it.discount ? ` <small>(${t('f_discount')} ${money(it.discount)})</small>` : ''}</span><b>${money(lineTotal(it))}</b></div></div>`).join('')}</div>
+    ${d.items.length > 40 ? `<div class="rx-items rx-compact"><div class="rx-row rx-th"><span>${t('f_productId')}</span><span>${t('f_qty')}</span><span>${t('f_price')}</span><b>${t('total')}</b></div>${d.items.map((it, i) => `<div class="rx-row"><span>${i + 1}. ${esc(prodName(it.productId))}</span><span>${fmtNum(it.qty, 3)}</span><span>${money(it.price)}</span><b>${money(lineTotal(it))}</b></div>`).join('')}</div>` : `<div class="rx-items">${d.items.map((it, i) => `<div class="rx-it"><div class="rx-nm">${i + 1}. ${esc(prodName(it.productId))}</div><div class="rx-ln"><span><span class="ltr">${fmtNum(it.qty, 3)} × ${money(it.price)}</span>${+it.discount ? ` <small>(${t('f_discount')} ${money(it.discount)})</small>` : ''}</span><b>${money(lineTotal(it))}</b></div></div>`).join('')}</div>`}
     <div class="rx-count">${t('itemsCount')}: ${fmtNum(d.items.length)} · ${t('f_qty')}: ${fmtNum(qtySum, 3)}</div>
     <div class="rx-tot">${r(t('subtotal'), money(tt.sub))}${tt.disc ? r(t('f_discount'), '− ' + money(tt.disc)) : ''}${tt.tax ? r(`${t('tax')} ${fmtNum(d.taxRate, 2)}%`, money(tt.tax)) : ''}
       <div class="rx-grand"><span>${t('total')}</span><b>${money(tt.total)} ${esc(curLabel())}</b></div>
@@ -92,16 +92,23 @@ renderPrintVoucher = function (kind, r) { // eslint-disable-line no-global-assig
 };
 
 /* ---------- page size: thermal receipts print as ONE continuous page ---------- */
-function receiptHeightMm(html) {
+const RX_MAX_MM = 4900; // keep under the 5080 mm (200 in) page limit of the print system
+function receiptHeightMm(html, zoom = 1) {
   const W = PX.paper(); const box = document.createElement('div');
-  box.style.cssText = `position:absolute;left:-10000px;top:0;width:${W}mm;visibility:hidden;background:#fff`; box.className = 'print-measure';
+  box.style.cssText = `position:absolute;left:-10000px;top:0;width:${W}mm;visibility:hidden;background:#fff${zoom < 1 ? `;zoom:${zoom}` : ''}`; box.className = 'print-measure';
   box.setAttribute('dir', LANG === 'ar' ? 'rtl' : 'ltr'); box.innerHTML = html; document.body.appendChild(box);
-  const px = box.getBoundingClientRect().height; box.remove();
+  const px = box.getBoundingClientRect().height * (zoom < 1 ? 1 : 1); box.remove();
   return Math.ceil(px * 25.4 / 96) + 8; // + a little paper at the end for the cutter
 }
 function setPageStyle(mode, html) {
   let el = document.getElementById('page-style'); if (!el) { el = document.createElement('style'); el.id = 'page-style'; document.head.appendChild(el); }
-  if (mode === 'rcpt-mode') { const W = PX.paper(), H = receiptHeightMm(html); el.textContent = `@media print { @page { size: ${W}mm ${H}mm; margin: 0; } html, body { width: ${W}mm; } }`; return { W, H }; }
+  if (mode === 'rcpt-mode') {
+    // one continuous page as long as the receipt; print systems allow up to ~5 m per page (PDF limit), so very long
+    // receipts get a slightly smaller font instead of being cut into pages
+    const W = PX.paper(); let H = receiptHeightMm(html); let zoom = 1;
+    if (H > RX_MAX_MM) { zoom = Math.max(0.55, (RX_MAX_MM - 10) / H); H = Math.ceil(receiptHeightMm(html, zoom)); }
+    el.textContent = `@media print { @page { size: ${W}mm ${H}mm; margin: 0; } html, body { width: ${W}mm; } ${zoom < 1 ? `#print-area .rx { zoom: ${zoom.toFixed(3)}; }` : ''} }`; return { W, H };
+  }
   if (mode === 'labels-mode') { el.textContent = ''; return null; }
   el.textContent = '@media print { @page { size: A4; margin: 12mm 12mm 14mm; } }'; return null;
 }
