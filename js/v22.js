@@ -309,7 +309,7 @@ async function silentPrint(html, mode, deviceName) {
   const pa = $('#print-area'); pa.setAttribute('dir', LANG === 'ar' ? 'rtl' : 'ltr'); pa.innerHTML = html;
   document.body.classList.add('printing'); if (mode) document.body.classList.add(mode);
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-  let res = { ok: false }; try { res = await window.dalalaPrint.run({ deviceName, silent: true, receipt: mode === 'rcpt-mode' }); } catch (e) { res = { ok: false, error: e.message }; }
+  let res = { ok: false }; try { const ps = window.__pageSize; res = await window.dalalaPrint.run({ deviceName, silent: true, receipt: mode === 'rcpt-mode', pageSize: ps ? { width: Math.round(ps.W * 1000), height: Math.round(ps.H * 1000) } : (mode ? undefined : 'A4') }); } catch (e) { res = { ok: false, error: e.message }; }
   document.body.classList.remove('printing'); if (mode) document.body.classList.remove(mode); pa.innerHTML = '';
   if (res.ok) toast(`${t('printedOn')} ${deviceName}`); else { toast(`${t('printFailed')}: ${res.error || deviceName}`, 'err'); _printHTMLv22(html, mode); }
 }
@@ -319,6 +319,7 @@ function printSettingsCard() {
   return card(`${icon('printer')} ${t('printingSettings')}`, `<div class="form-grid">
       ${desk ? `${sel('receiptPrinter', t('receiptPrinter'))}${sel('a4Printer', t('a4Printer'))}${sel('labelPrinter', t('labelPrinter'))}
       <label class="field row"><input type="checkbox" id="pr-silent" ${st.silentPrint ? 'checked' : ''}><span>${t('silentPrint')}</span></label>` : ''}
+      <label class="field"><span>${t('paperWidth')}</span><select class="input" id="pr-paper">${[80, 58].map(w => `<option value="${w}" ${(+st.paperWidth || 80) === w ? 'selected' : ''}>${w} ${t('mmLbl')}</option>`).join('')}</select></label>
       <label class="field row"><input type="checkbox" id="pr-auto" ${st.autoPrintReceipt ? 'checked' : ''}><span>${t('autoPrintReceipt')}</span></label>
       <label class="field row"><input type="checkbox" id="pr-open" ${st.openAfterSale ? 'checked' : ''}><span>${t('openAfterSale')}</span></label>
       <label class="field"><span>${t('f_invoicePrefix')}</span><input class="input" id="pr-prefix" value="${esc(st.invoicePrefix || 'S')}" maxlength="5" dir="ltr" pattern="[A-Za-z]{1,5}"></label></div>
@@ -416,7 +417,7 @@ const ACT_V22 = {
   'rep-xlsx': el => reportWorkbook(el.dataset.from, el.dataset.to),
   'print-save': () => {
     const pp = PP(); ['receiptPrinter', 'a4Printer', 'labelPrinter'].forEach(k => { const s = $('#pr-' + k); if (s) pp[k] = s.value; });
-    if ($('#pr-silent')) pp.silentPrint = $('#pr-silent').checked; pp.autoPrintReceipt = $('#pr-auto').checked; pp.openAfterSale = $('#pr-open').checked;
+    if ($('#pr-silent')) pp.silentPrint = $('#pr-silent').checked; pp.autoPrintReceipt = $('#pr-auto').checked; pp.paperWidth = +$('#pr-paper').value || 80; pp.openAfterSale = $('#pr-open').checked;
     const px = $('#pr-prefix').value.trim().toUpperCase(); if (!/^[A-Z]{1,5}$/.test(px)) return toast(t('errPrefix'), 'err');
     savePP(pp); if (S().invoicePrefix !== px) { S().invoicePrefix = px; DB.save(); } toast(t('saved')); render();
   },

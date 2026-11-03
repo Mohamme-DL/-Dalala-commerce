@@ -36,18 +36,29 @@ const OFFICE = (() => {
   function xlsx(fileName, sheets) {
     sheets = sheets.filter(Boolean); if (!sheets.length) return;
     const sheetXml = sh => {
-      const cols = Math.max(sh.headers.length, ...sh.rows.map(r => r.length), 1);
-      const widths = Array.from({ length: cols }, (_, i) => Math.min(60, Math.max(8, ...[sh.headers[i], ...sh.rows.slice(0, 400).map(r => r[i])].map(v => String(v ?? '').length + 2))));
-      let r = 0; const rowsXml = [];
-      const row = (vals, style) => { r++; rowsXml.push(`<row r="${r}">${vals.map((v, i) => { const ref = colName(i) + r; return isNum(v) ? `<c r="${ref}" s="${style === 1 ? 1 : style === 3 ? 3 : 2}"><v>${v}</v></c>` : `<c r="${ref}" t="inlineStr" s="${style}"><is><t xml:space="preserve">${x(v)}</t></is></c>`; }).join('')}</row>`); };
-      if (sh.title) { row([sh.title], 4); r++; }
-      row(sh.headers, 1); const headRow = r;
-      sh.rows.forEach(v => row(v, 0));
-      if (sh.totals) row(sh.totals, 3);
+      const cols = Math.max(sh.headers.length, ...sh.rows.map(r => r.length), 1); const last = colName(cols - 1);
+      const widths = Array.from({ length: cols }, (_, i) => Math.min(55, Math.max(9, ...[sh.headers[i], ...sh.rows.slice(0, 500).map(r => r[i])].map(v => Math.ceil(String(v ?? '').length * 1.15) + 3))));
+      let r = 0; const rowsXml = [], merges = [];
+      // styles: 0 text · 1 header · 2 number · 3 total number · 4 business name · 5 zebra text · 6 zebra number · 7 subtitle · 8 total text · 9 report title
+      const row = (vals, text, num, ht) => { r++; rowsXml.push(`<row r="${r}"${ht ? ` ht="${ht}" customHeight="1"` : ''}>${vals.map((v, i) => { const ref = colName(i) + r; return isNum(v) ? `<c r="${ref}" s="${num}"><v>${v}</v></c>` : `<c r="${ref}" t="inlineStr" s="${text}"><is><t xml:space="preserve">${x(v)}</t></is></c>`; }).join('')}</row>`); };
+      const banner = (v, st, ht) => { row([v, ...Array(cols - 1).fill('')], st, st, ht); if (cols > 1) merges.push(`A${r}:${last}${r}`); };
+      banner(loc(S(), 'businessName'), 4, 28);
+      banner(sh.title || sh.name || '', 9, 22);
+      banner(`${fmtDate(today())} · ${sh.rows.length} ${LANG === 'ar' ? 'سجل' : 'rows'}${sh.sub ? ' · ' + sh.sub : ''}`, 7, 18);
+      r++; // empty spacer row
+      row(sh.headers, 1, 1, 26); const headRow = r;
+      sh.rows.forEach((v, k) => (k % 2 ? row(v, 5, 6) : row(v, 0, 2)));
+      if (sh.totals) row(sh.totals, 8, 3, 22);
+      const land = cols > 6;
       return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-<sheetViews><sheetView workbookViewId="0" ${rtl() ? 'rightToLeft="1"' : ''}><pane ySplit="${headRow}" topLeftCell="A${headRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>
+<sheetViews><sheetView workbookViewId="0" showGridLines="0" ${rtl() ? 'rightToLeft="1"' : ''}><pane ySplit="${headRow}" topLeftCell="A${headRow + 1}" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
+<sheetFormatPr defaultRowHeight="18" customHeight="1"/>
 <cols>${widths.map((w, i) => `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>`).join('')}</cols><sheetData>${rowsXml.join('')}</sheetData>
-${sh.rows.length ? `<autoFilter ref="A${headRow}:${colName(cols - 1)}${headRow + sh.rows.length}"/>` : ''}</worksheet>`;
+${sh.rows.length ? `<autoFilter ref="A${headRow}:${last}${headRow + sh.rows.length}"/>` : ''}${merges.length ? `<mergeCells count="${merges.length}">${merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}
+<printOptions horizontalCentered="1"/><pageMargins left="0.4" right="0.4" top="0.5" bottom="0.6" header="0.2" footer="0.3"/>
+<pageSetup paperSize="9" orientation="${land ? 'landscape' : 'portrait'}" fitToWidth="1" fitToHeight="0"/>
+<headerFooter><oddFooter>&amp;C&amp;P / &amp;N</oddFooter></headerFooter></worksheet>`;
     };
     const safe = (n, i) => (String(n || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Sheet' + (i + 1));
     const files = [
@@ -55,13 +66,19 @@ ${sh.rows.length ? `<autoFilter ref="A${headRow}:${colName(cols - 1)}${headRow +
       { name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` },
       { name: 'xl/workbook.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${x(safe(s.name, i))}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>` },
       { name: 'xl/_rels/workbook.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` },
-      // styles: 0 normal, 1 header (bold, fill, border), 2 number, 3 totals (bold number), 4 title
-      { name: 'xl/styles.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="#,##0.###"/></numFmts>
-<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font><font><b/><sz val="14"/><name val="Calibri"/></font></fonts>
-<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FF059669"/></patternFill></fill></fills>
-<borders count="2"><border/><border><left style="thin"><color rgb="FFD1D5DB"/></left><right style="thin"><color rgb="FFD1D5DB"/></right><top style="thin"><color rgb="FFD1D5DB"/></top><bottom style="thin"><color rgb="FFD1D5DB"/></bottom></border></borders>
+      { name: 'xl/styles.xml', data: (() => {
+        const ac = 'FF' + String(S().accent || '#059669').replace('#', '').toUpperCase().slice(0, 6); const dec = Math.max(0, Math.min(3, +(S().decimals ?? 3)));
+        const fmt = dec ? '#,##0.' + '0'.repeat(dec) : '#,##0';
+        const bd = c => `<border><left style="thin"><color rgb="${c}"/></left><right style="thin"><color rgb="${c}"/></right><top style="thin"><color rgb="${c}"/></top><bottom style="thin"><color rgb="${c}"/></bottom><diagonal/></border>`;
+        const xf = (num, font, fill, border, h, extra = '') => `<xf numFmtId="${num}" fontId="${font}" fillId="${fill}" borderId="${border}" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="${h}" vertical="center" ${extra}/></xf>`;
+        return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="${fmt}"/></numFmts>
+<fonts count="6"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="17"/><color rgb="${ac}"/><name val="Calibri"/><family val="2"/></font><font><i/><sz val="10"/><color rgb="FF6B7280"/><name val="Calibri"/><family val="2"/></font><font><b/><sz val="13"/><color rgb="FF111827"/><name val="Calibri"/><family val="2"/></font></fonts>
+<fills count="5"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="${ac}"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFF3F7F6"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE3F1EC"/><bgColor indexed="64"/></patternFill></fill></fills>
+<borders count="3"><border><left/><right/><top/><bottom/><diagonal/></border>${bd('FFDDE3E8')}${bd(ac)}</borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="1" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" applyFont="1" applyFill="1" applyBorder="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf><xf numFmtId="164" fontId="0" fillId="0" borderId="1" applyNumberFormat="1" applyBorder="1"/><xf numFmtId="164" fontId="2" fillId="0" borderId="1" applyNumberFormat="1" applyFont="1" applyBorder="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>` },
+<cellXfs count="10">${xf(0, 0, 0, 1, 'general')}${xf(0, 1, 2, 2, 'center', 'wrapText="1"')}${xf(164, 0, 0, 1, 'center')}${xf(164, 2, 4, 2, 'center')}${xf(0, 3, 0, 0, 'center')}${xf(0, 0, 3, 1, 'general')}${xf(164, 0, 3, 1, 'center')}${xf(0, 4, 0, 0, 'center')}${xf(0, 2, 4, 2, 'general')}${xf(0, 5, 0, 0, 'center')}</cellXfs>
+<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+      })() },
       ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: sheetXml(s) })),
     ];
     save(zip(files), `${fileName}-${today()}.xlsx`);
@@ -91,5 +108,5 @@ ${sh.rows.length ? `<autoFilter ref="A${headRow}:${colName(cols - 1)}${headRow +
 })();
 
 /* the old CSV entry point now produces a formatted Excel file */
-function exportCSV(name, headers, rows, opts = {}) { OFFICE.xlsx(name, [{ name: opts.sheet || name, title: opts.title, headers, rows: rows.map(r => r.map(v => (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && v.length < 12 && !/^0\d/.test(v) ? +v : v))), totals: opts.totals }]); }
+function exportCSV(name, headers, rows, opts = {}) { OFFICE.xlsx(name, [{ name: opts.sheet || name, title: opts.title || opts.sheet || name, sub: opts.sub, headers, rows: rows.map(r => r.map(v => (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v) && v.length < 12 && !/^0\d/.test(v) ? +v : v))), totals: opts.totals }]); }
 function exportWord(name, title, headers, rows, opts = {}) { OFFICE.docx(name, { title, sub: opts.sub, headers, rows, totals: opts.totals }); }

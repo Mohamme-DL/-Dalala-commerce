@@ -463,11 +463,11 @@ function renderReports(p) {
 function reportExport(el) {
   const { what, from, to } = el.dataset;
   if (what === 'sales') exportCSV(`sales-${from}-${to}`, [t('f_number'), t('f_date'), t('f_type'), t('f_customerId'), t('subtotal'), t('f_discount'), t('tax'), t('total'), t('f_paid'), t('f_due'), t('f_method')],
-    salesIn(from, to).map(d => { const tt = docTotals(d); return [d.number, d.date, t('opt_' + d.type), partyName('customers', d.customerId), tt.sub, tt.disc, tt.tax, tt.total, d.paid, docDue(d), t('opt_' + d.method)]; }));
+    salesIn(from, to).map(d => { const tt = docTotals(d); return [d.number, d.date, t('opt_' + d.type), partyName('customers', d.customerId), tt.sub, tt.disc, tt.tax, tt.total, d.paid, docDue(d), t('opt_' + d.method)]; }), { sheet: t('nav_sales'), sub: `${fmtDate(from)} → ${fmtDate(to)}` });
   else if (what === 'products') { const prod = {}; salesIn(from, to).forEach(d => d.items.forEach(it => { const o = prod[it.productId] = prod[it.productId] || { qty: 0, rev: 0, cost: 0 }; o.qty += sign(d) * it.qty; o.rev += sign(d) * lineTotal(it); o.cost += sign(d) * it.qty * (it.cost || 0); }));
-    exportCSV(`product-sales-${from}-${to}`, [t('f_code'), t('f_productId'), t('f_qty'), t('revenue'), t('cogs'), t('profit')], Object.entries(prod).map(([pid, o]) => [DB.get('products', pid)?.code, prodName(pid), round(o.qty), round(o.rev), round(o.cost), round(o.rev - o.cost)])); }
+    exportCSV(`product-sales-${from}-${to}`, [t('f_code'), t('f_productId'), t('f_qty'), t('revenue'), t('cogs'), t('profit')], Object.entries(prod).map(([pid, o]) => [DB.get('products', pid)?.code, prodName(pid), round(o.qty), round(o.rev), round(o.cost), round(o.rev - o.cost)]), { sheet: t('topProducts'), sub: `${fmtDate(from)} → ${fmtDate(to)}` }); }
   else exportCSV('stock', [t('f_code'), t('f_barcode'), t('f_name'), t('f_categoryId'), t('f_unit'), t('f_stock'), t('f_minQty'), t('f_cost'), t('f_price'), t('stockValueCost')],
-    DB.all('products').filter(isStock).map(p2 => [p2.code, p2.barcode, loc(p2), refLabel('categories', p2.categoryId), t('opt_' + p2.unit), stockOf(p2.id), p2.minQty, p2.cost, p2.price, round(Math.max(0, stockOf(p2.id)) * p2.cost)]));
+    DB.all('products').filter(isStock).map(p2 => [p2.code, p2.barcode, loc(p2), refLabel('categories', p2.categoryId), t('opt_' + p2.unit), stockOf(p2.id), p2.minQty, p2.cost, p2.price, round(Math.max(0, stockOf(p2.id)) * p2.cost)]), { sheet: t('stockReport') });
 }
 function reorderDraft() {
   const low = lowStock(); if (!low.length) return toast(t('allStocked'));

@@ -109,7 +109,9 @@ const fromMain = e => win && e.sender === win.webContents;
 ipcMain.handle('print:list', async e => { if (!fromMain(e)) return []; try { return (await e.sender.getPrintersAsync()).map(p => ({ name: p.name, displayName: p.displayName, isDefault: !!p.isDefault })); } catch (err) { return []; } });
 ipcMain.handle('print:run', (e, o = {}) => new Promise(resolve => {
   if (!fromMain(e)) return resolve({ ok: false, error: 'denied' });
-  e.sender.print({ silent: !!o.silent, deviceName: String(o.deviceName || ''), printBackground: true, margins: { marginType: o.receipt ? 'none' : 'default' } }, (ok, error) => resolve({ ok, error: ok ? '' : String(error || '') }));
+  // receipts: the page is exactly as long as the receipt (in microns), so the roll is never cut into pages
+  const ps = o.pageSize && typeof o.pageSize === 'object' && +o.pageSize.width > 10000 && +o.pageSize.height > 10000 ? { width: Math.min(+o.pageSize.width, 120000), height: Math.min(+o.pageSize.height, 5000000) } : (o.pageSize === 'A4' ? 'A4' : undefined);
+  e.sender.print({ silent: !!o.silent, deviceName: String(o.deviceName || ''), printBackground: true, margins: { marginType: o.receipt ? 'none' : 'default' }, ...(ps ? { pageSize: ps } : {}) }, (ok, error) => resolve({ ok, error: ok ? '' : String(error || '') }));
 }));
 /* automatic backups: <userData>/backups/<name>.json, daily ones kept for 30 days */
 const BK_DIR = () => path.join(app.getPath('userData'), 'backups');
