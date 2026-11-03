@@ -11,7 +11,7 @@ function partyRemaining(kind) { // kind 'c' | 's' → { docId: remaining }
   return memo('alloc-' + kind, () => {
     const isC = kind === 'c', pk = isC ? 'customerId' : 'supplierId';
     const groups = {}; const g = id => (groups[id] = groups[id] || { docs: [], credit: 0, vouchers: [] });
-    DB.all(isC ? 'sales' : 'purchases').forEach(d => { if (!d[pk]) return; if (d.type === 'return') { const c = docDue(d); if (c > 0) g(d[pk]).credit += c; } else if (docDue(d) > 0.0005) g(d[pk]).docs.push(d); });
+    liveDocs(isC ? 'sales' : 'purchases').forEach(d => { if (!d[pk]) return; if (d.type === 'return') { const c = docDue(d); if (c > 0) g(d[pk]).credit += c; } else if (docDue(d) > 0.0005) g(d[pk]).docs.push(d); });
     DB.all(isC ? 'receipts' : 'disbursements').forEach(v => { if (v[pk]) g(v[pk]).vouchers.push(v); });
     const res = {};
     for (const [pid, x] of Object.entries(groups)) {
@@ -42,7 +42,7 @@ docStatus = function (d) { // eslint-disable-line no-global-assign
 };
 function openDocs(kind, pid) {
   const rem = partyRemaining(kind); const col = kind === 'c' ? 'sales' : 'purchases'; const pk = kind === 'c' ? 'customerId' : 'supplierId';
-  return DB.all(col).filter(d => d[pk] === pid && d.type !== 'return' && (rem[d.id] || 0) > 0.0005).map(d => ({ d, rem: rem[d.id] }))
+  return liveDocs(col).filter(d => d[pk] === pid && d.type !== 'return' && (rem[d.id] || 0) > 0.0005).map(d => ({ d, rem: rem[d.id] }))
     .sort((a, b) => (a.d.date || '').localeCompare(b.d.date || '') || String(a.d.number).localeCompare(String(b.d.number)));
 }
 function payDebtDialog(kind, pid, docId) {
@@ -157,7 +157,7 @@ function logExport(tab, how) {
   const heads = cols.map(([, l]) => t(l)); const data = rows.map(r => cols.map(([k]) => (k === 'date' ? (r.date ? fmtDate(r.date) : '') : r[k] ?? '')));
   if (how === 'xlsx') exportCSV('log-' + tab, heads, data, { sheet: t('log_' + tab), title: t('log_' + tab) });
   else if (how === 'docx') exportWord('log-' + tab, t('log_' + tab), heads, data);
-  else printHTML(`${printHeader(t('log_' + tab), `${fmtNum(rows.length)} ${t('records')}`)}<table class="ptable small"><thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(([k]) => `<td>${logCell(k, r[k]).replace(/<[^>]+>/g, '')}</td>`).join('')}</tr>`).join('')}</tbody></table>`);
+  else printHTML(`${printHeader(t('log_' + tab), `${fmtNum(rows.length)} ${t('records')}`)}<table class="ptable small"><thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${cols.map(([k]) => `<td>${logCell(k, r[k]).replace(/<[^>]+>/g, '')}</td>`).join('')}</tr>`).join('')}</tbody></table>`, cols.length > 6 ? 'land-mode' : '');
 }
 
 /* ================= Double-entry journal & trial balance ================= */
@@ -174,7 +174,7 @@ function journal() {
     E('', '', t('openingBalance') + ' — ' + t('jacc_inventory'), [['inventory', inv0, 0], ['capital', 0, inv0]]);
     DB.all('customers').forEach(c => { const b = +c.openingBalance || 0; if (b) E('', c.code || '', `${t('openingBalance')} — ${loc(c)}`, b > 0 ? [['ar', b, 0], ['capital', 0, b]] : [['capital', -b, 0], ['ar', 0, -b]]); });
     DB.all('suppliers').forEach(c => { const b = +c.openingBalance || 0; if (b) E('', c.code || '', `${t('openingBalance')} — ${loc(c)}`, b > 0 ? [['capital', b, 0], ['ap', 0, b]] : [['ap', -b, 0], ['capital', 0, -b]]); });
-    DB.all('sales').forEach(d => {
+    liveDocs('sales').forEach(d => {
       const tt = docTotals(d), C = docCost(d), P = +d.paid || 0, who = partyName('customers', d.customerId), link = `#/doc/sales/${d.id}`;
       if (d.type === 'return') {
         E(d.date, d.number, `${t('salesReturn')} — ${who}`, [['sales', tt.sub, 0], ['salesDisc', 0, tt.disc], ['tax', tt.tax, 0], ['ar', 0, tt.total], ['inventory', C, 0], ['cogs', 0, C]], link);
@@ -184,7 +184,7 @@ function journal() {
         E(d.date, d.number, `${t('paidOnInvoice')} — ${who}`, [[acc(d.method), P, 0], ['ar', 0, P]], link);
       }
     });
-    DB.all('purchases').forEach(d => {
+    liveDocs('purchases').forEach(d => {
       const tt = docTotals(d), P = +d.paid || 0, who = partyName('suppliers', d.supplierId), link = `#/doc/purchases/${d.id}`;
       if (d.type === 'return') {
         E(d.date, d.number, `${t('purchaseReturn')} — ${who}`, [['ap', tt.total, 0], ['inventory', 0, tt.after], ['tax', 0, tt.tax]], link);
@@ -413,7 +413,7 @@ const ACT_V22 = {
   'log-print': el => logExport(el.dataset.tab, 'print'), 'log-xlsx': el => logExport(el.dataset.tab, 'xlsx'), 'log-docx': el => logExport(el.dataset.tab, 'docx'),
   'acc-export': el => accountsExport(el.dataset.how),
   'year-close': () => yearCloseDialog(),
-  'crud-word': el => { const k = el.dataset.key; const cols = ENT[k].fields.filter(f => f.list); exportWord(k, t('nav_' + k), cols.map(fieldLabel), crudRows(k).map(r => cols.map(f => cellText(f, r)))); },
+  'crud-word': el => { const k = el.dataset.key; const cols = ENT[k].fields.filter(f => f.list); exportWord(k, t('nav_' + k), cols.map(fieldLabel), crudRows(k).map(r => cols.map(f => cellText(f, r))), { sub: typeof crudInfo === 'function' ? crudInfo(k).join(' · ') : '' }); },
   'rep-xlsx': el => reportWorkbook(el.dataset.from, el.dataset.to),
   'print-save': () => {
     const pp = PP(); ['receiptPrinter', 'a4Printer', 'labelPrinter'].forEach(k => { const s = $('#pr-' + k); if (s) pp[k] = s.value; });

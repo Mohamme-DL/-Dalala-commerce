@@ -112,6 +112,7 @@ function setPageStyle(mode, html) {
     el.textContent = `@media print { @page { size: ${W}mm ${H}mm; margin: 0; } html, body { width: ${W}mm; } ${zoom < 1 ? `#print-area .rx { zoom: ${zoom.toFixed(3)}; }` : ''} }`; return { W, H };
   }
   if (mode === 'labels-mode') { el.textContent = ''; return null; }
+  if (mode === 'land-mode') { el.textContent = '@media print { @page { size: A4 landscape; margin: 10mm 8mm 12mm; } }'; return null; }
   el.textContent = '@media print { @page { size: A4; margin: 12mm 12mm 14mm; } }'; return null;
 }
 (function () {

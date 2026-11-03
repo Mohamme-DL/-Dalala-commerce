@@ -214,6 +214,9 @@ function printHeader(title, sub = '') {
 }
 
 /* =================== Business logic =================== */
+/* invoices imported from a previous system (archived: true) count only in sales / purchase reports and
+   profit — they never change stock, cash, bank or customer / supplier balances */
+const liveDocs = col => DB.all(col).filter(d => !d.archived);
 const round = (n, d = 3) => Math.round((+n || 0) * 10 ** d) / 10 ** d;
 const memoState = { v: -1, m: {} };
 function memo(key, fn) { if (memoState.v !== DB.v) { memoState.v = DB.v; memoState.m = {}; } return key in memoState.m ? memoState.m[key] : (memoState.m[key] = fn()); }
@@ -234,8 +237,8 @@ function docCost(d) { return round(sum(d.items || [], it => (+it.qty || 0) * (+i
 function stockMap() {
   return memo('stock', () => {
     const st = {}; DB.all('products').forEach(p => { st[p.id] = +p.openingQty || 0; });
-    DB.all('sales').forEach(s => s.items.forEach(it => { st[it.productId] = (st[it.productId] || 0) - sign(s) * (+it.qty || 0); }));
-    DB.all('purchases').forEach(s => s.items.forEach(it => { st[it.productId] = (st[it.productId] || 0) + sign(s) * (+it.qty || 0); }));
+    liveDocs('sales').forEach(s => s.items.forEach(it => { st[it.productId] = (st[it.productId] || 0) - sign(s) * (+it.qty || 0); }));
+    liveDocs('purchases').forEach(s => s.items.forEach(it => { st[it.productId] = (st[it.productId] || 0) + sign(s) * (+it.qty || 0); }));
     DB.all('adjustments').forEach(a => { st[a.productId] = (st[a.productId] || 0) + (+a.qty || 0); });
     return st;
   });
@@ -248,7 +251,7 @@ const lowStock = () => DB.all('products').filter(p => isStock(p) && p.active !==
 function customerBalances() {
   return memo('cbal', () => {
     const b = {}; DB.all('customers').forEach(c => { b[c.id] = +c.openingBalance || 0; });
-    DB.all('sales').forEach(s => { if (s.customerId) b[s.customerId] = (b[s.customerId] || 0) + sign(s) * docDue(s); });
+    liveDocs('sales').forEach(s => { if (s.customerId) b[s.customerId] = (b[s.customerId] || 0) + sign(s) * docDue(s); });
     DB.all('receipts').forEach(r => { b[r.customerId] = (b[r.customerId] || 0) - (+r.amount || 0); });
     return b;
   });
@@ -256,7 +259,7 @@ function customerBalances() {
 function supplierBalances() {
   return memo('sbal', () => {
     const b = {}; DB.all('suppliers').forEach(c => { b[c.id] = +c.openingBalance || 0; });
-    DB.all('purchases').forEach(s => { if (s.supplierId) b[s.supplierId] = (b[s.supplierId] || 0) + sign(s) * docDue(s); });
+    liveDocs('purchases').forEach(s => { if (s.supplierId) b[s.supplierId] = (b[s.supplierId] || 0) + sign(s) * docDue(s); });
     DB.all('disbursements').forEach(r => { b[r.supplierId] = (b[r.supplierId] || 0) - (+r.amount || 0); });
     return b;
   });
@@ -268,7 +271,7 @@ const supplierBalance = id => round(supplierBalances()[id] || 0);
 function statement(kind, id) {
   const lines = []; const party = DB.get(kind === 'customer' ? 'customers' : 'suppliers', id);
   if (+party?.openingBalance) lines.push({ date: '', ref: '', desc: t('openingBalance'), debit: Math.max(0, +party.openingBalance), credit: Math.max(0, -party.openingBalance) });
-  const docs = kind === 'customer' ? DB.all('sales').filter(s => s.customerId === id) : DB.all('purchases').filter(s => s.supplierId === id);
+  const docs = kind === 'customer' ? liveDocs('sales').filter(s => s.customerId === id) : liveDocs('purchases').filter(s => s.supplierId === id);
   docs.forEach(d => {
     const total = docTotal(d), paid = +d.paid || 0, ret = d.type === 'return';
     lines.push({ date: d.date, ref: d.number, desc: t(kind === 'customer' ? (ret ? 'salesReturn' : 'salesInvoice') : (ret ? 'purchaseReturn' : 'purchaseInvoice')), debit: ret ? 0 : total, credit: ret ? total : 0, link: `#/doc/${kind === 'customer' ? 'sales' : 'purchases'}/${d.id}` });
@@ -289,8 +292,8 @@ function moneyMoves() {
     const add = (date, account, amount, desc, ref, link) => { if (amount) mv.push({ date, account, amount: round(amount), desc, ref, link }); };
     const st = S();
     add('', 'cash', +st.openingCash || 0, t('openingBalance'), ''); add('', 'bank', +st.openingBank || 0, t('openingBalance'), '');
-    DB.all('sales').forEach(d => add(d.date, accountOf(d.method), sign(d) * (+d.paid || 0), `${t(d.type === 'return' ? 'salesReturn' : 'salesInvoice')} — ${partyName('customers', d.customerId)}`, d.number, `#/doc/sales/${d.id}`));
-    DB.all('purchases').forEach(d => add(d.date, accountOf(d.method), -sign(d) * (+d.paid || 0), `${t(d.type === 'return' ? 'purchaseReturn' : 'purchaseInvoice')} — ${partyName('suppliers', d.supplierId)}`, d.number, `#/doc/purchases/${d.id}`));
+    liveDocs('sales').forEach(d => add(d.date, accountOf(d.method), sign(d) * (+d.paid || 0), `${t(d.type === 'return' ? 'salesReturn' : 'salesInvoice')} — ${partyName('customers', d.customerId)}`, d.number, `#/doc/sales/${d.id}`));
+    liveDocs('purchases').forEach(d => add(d.date, accountOf(d.method), -sign(d) * (+d.paid || 0), `${t(d.type === 'return' ? 'purchaseReturn' : 'purchaseInvoice')} — ${partyName('suppliers', d.supplierId)}`, d.number, `#/doc/purchases/${d.id}`));
     DB.all('receipts').forEach(r => add(r.date, accountOf(r.method), +r.amount, `${t('receiptVoucher')} — ${partyName('customers', r.customerId)}`, r.number));
     DB.all('disbursements').forEach(r => add(r.date, accountOf(r.method), -r.amount, `${t('paymentVoucher')} — ${partyName('suppliers', r.supplierId)}`, r.number));
     DB.all('expenses').forEach(e => add(e.date, accountOf(e.method), -e.amount, `${t('expense')} — ${t('opt_' + e.category)}${e.description ? ' — ' + e.description : ''}`, e.number));

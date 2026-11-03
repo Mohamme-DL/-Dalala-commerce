@@ -12,7 +12,7 @@ app.setAppUserModelId('ly.dalala.' + PRODUCT.id);
 if (!app.requestSingleInstanceLock()) app.quit();
 Menu.setApplicationMenu(null);
 
-let win = null, actWin = null, state = { ok: false, reason: 'none' };
+let win = null, actWin = null, state = { ok: false, reason: 'none' }, lastSaved = '';
 
 /* ---------- several computers, one database (LAN) ----------
    network.json: { mode: 'local' | 'host' | 'client', port, key, host }  */
@@ -75,6 +75,7 @@ function createMain() {
   win.once('ready-to-show', () => { win.maximize(); win.show(); });
   win.webContents.session.on('will-download', (_e, item) => {
     item.setSaveDialogOptions({ title: 'حفظ الملف — Save file', defaultPath: path.join(app.getPath('documents'), item.getFilename()) });
+    item.once('done', (_ev, st) => { if (st === 'completed' && win) { lastSaved = item.getSavePath(); win.webContents.send('file:saved', lastSaved); } });
   });
   win.webContents.on('render-process-gone', (_e, d) => { dialog.showErrorBox(PRODUCT.nameAr, `حدث خطأ غير متوقع وسيتم إعادة التحميل.\n(${d.reason})`); win.reload(); });
   win.on('closed', () => { win = null; });
@@ -128,6 +129,8 @@ ipcMain.handle('bk:save', (e, name, json) => {
 });
 ipcMain.handle('bk:list', e => { if (!fromMain(e)) return []; try { return fs.readdirSync(BK_DIR()).filter(x => x.endsWith('.json')).map(x => { const st = fs.statSync(path.join(BK_DIR(), x)); return { name: x.slice(0, -5), size: st.size, mtime: st.mtimeMs }; }).sort((a, b) => b.mtime - a.mtime); } catch (err) { return []; } });
 ipcMain.handle('bk:read', (e, name) => { if (!fromMain(e)) return ''; const n = bkName(name); try { return fs.readFileSync(path.join(BK_DIR(), n + '.json'), 'utf8'); } catch (err) { return ''; } });
+// open the file the user just exported (only that path — never an arbitrary one)
+ipcMain.handle('file:openLast', e => { if (!fromMain(e) || !lastSaved || !fs.existsSync(lastSaved)) return false; shell.openPath(lastSaved); return true; });
 ipcMain.handle('bk:open', e => { if (!fromMain(e)) return false; fs.mkdirSync(BK_DIR(), { recursive: true }); shell.openPath(BK_DIR()); return true; });
 
 app.on('second-instance', () => { const w = win || actWin; if (w) { if (w.isMinimized()) w.restore(); w.focus(); } });

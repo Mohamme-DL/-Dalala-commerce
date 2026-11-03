@@ -220,7 +220,7 @@ Object.assign(ACT, {
     if (mode === 'client') { cfg.host = $('#net-host').value.trim(); cfg.key = $('#net-key').value.trim(); if (!cfg.host || !cfg.key) { toast(t('netNeedHostKey'), 'err'); return; } }
     confirmBox(t('netRestartConfirm'), () => window.dalalaNet.set(cfg)); },
 });
-Object.assign(ACT, ACT_V22);
+Object.assign(ACT, ACT_V22, ACT_V24);
 Object.assign(ACT, ACT_EXTRA, { 'wa-customer': el => waCustomerCompose(el.dataset.id), 'wa-doc': el => waDocCompose(el.dataset.id) });
 const CHG = {
   'net-mode': () => netModeFields(),
@@ -246,8 +246,8 @@ const CHG = {
 };
 Object.assign(CHG, {
   'count-set': el => { const c = openCount(); if (!c) return; c.lines[el.dataset.id].counted = el.value === '' ? '' : Math.max(0, +el.value); DB.save(); const y = window.scrollY; render(); window.scrollTo(0, y); },
-  'lbl-q': el => { LBL.q = el.value; render(); }, 'lbl-n': el => { LBL.sel[el.dataset.id] = Math.max(0, Math.floor(+el.value || 0)); render(); },
-  'lbl-opt': el => { const k = el.dataset.k; LBL[k] = el.type === 'checkbox' ? el.checked : (['w', 'h'].includes(k) ? Math.max(10, +el.value || 0) : el.value); render(); },
+  'lbl-q': el => { LBL.q = el.value; setTimeout(render); }, 'lbl-n': el => { LBL.sel[el.dataset.id] = Math.max(0, Math.floor(+el.value || 0)); setTimeout(render); }, // redraw after the focus change finishes
+  'lbl-opt': el => { const k = el.dataset.k; LBL[k] = el.type === 'checkbox' ? el.checked : (['w', 'h'].includes(k) ? Math.max(10, +el.value || 0) : ['copies', 'start', 'ccols', 'crows', 'cw', 'ch', 'cleft', 'ctop', 'cgx', 'cgy'].includes(k) ? Math.max(0, +el.value || 0) : el.value); setTimeout(render); },
 });
 let searchTimer;
 const INP = {

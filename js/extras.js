@@ -27,7 +27,7 @@ function lotsOf(pid) {
   return memo('lots', () => {
     const lots = {}; const add = (id, qty, expiry, ref, date) => { if (qty > 0) (lots[id] = lots[id] || []).push({ qty, expiry: expiry || '', ref, date }); };
     DB.all('products').forEach(p => add(p.id, +p.openingQty || 0, p.openingExpiry, t('openingQty'), ''));
-    DB.all('purchases').filter(d => d.type !== 'return').forEach(d => d.items.forEach(it => add(it.productId, +it.qty || 0, it.expiry, d.number, d.date)));
+    liveDocs('purchases').filter(d => d.type !== 'return').forEach(d => d.items.forEach(it => add(it.productId, +it.qty || 0, it.expiry, d.number, d.date)));
     const out = {};
     for (const [id, list] of Object.entries(lots)) {
       if (!list.some(l => l.expiry)) continue;
@@ -118,11 +118,13 @@ function countPrint(id) {
 
 /* =============== Barcode labels =============== */
 const LABEL_SHEETS = { a21: { cols: 3, rows: 7, w: 63.5, h: 38.1 }, a24: { cols: 3, rows: 8, w: 64, h: 33.9 }, a40: { cols: 4, rows: 10, w: 48.5, h: 25.4 }, a65: { cols: 5, rows: 13, w: 38.1, h: 21.2 } };
-const LBL = { sel: {}, type: 'code128', name: true, price: true, text: true, mode: 'roll', w: 50, h: 30, sheet: 'a24', q: '' };
+const LBL = { sel: {}, type: 'code128', name: true, price: true, text: true, mode: 'roll', w: 50, h: 30, sheet: 'a24', q: '', copies: 1, start: 1, cw: 70, ch: 37, ccols: 3, crows: 8, cleft: 0, ctop: 0, cgx: 0, cgy: 0 };
+/* the sheet in use: a ready A4 template or the custom one */
+function lblSheet() { if (LBL.sheet !== 'custom') { const s = lblSheet(); return { ...s, left: (210 - s.cols * s.w) / 2, top: (297 - s.rows * s.h) / 2, gx: 0, gy: 0 }; } return { cols: Math.max(1, Math.round(+LBL.ccols || 1)), rows: Math.max(1, Math.round(+LBL.crows || 1)), w: +LBL.cw || 70, h: +LBL.ch || 37, left: +LBL.cleft || 0, top: +LBL.ctop || 0, gx: +LBL.cgx || 0, gy: +LBL.cgy || 0 }; }
 function labelValue(p) { return String(p.barcode || p.code || ''); }
 function labelProblem(p) {
   const v = labelValue(p); if (!v) return t('lblNoCode');
-  if (LBL.type === 'code128') { if (/[^\x20-\x7e]/.test(v)) return t('lblNotAscii'); const w = LBL.mode === 'roll' ? +LBL.w : LABEL_SHEETS[LBL.sheet].w; if (Code128.modules(v) * 0.25 > w - 4) return t('lblTooLong'); }
+  if (LBL.type === 'code128') { if (/[^\x20-\x7e]/.test(v)) return t('lblNotAscii'); const w = LBL.mode === 'roll' ? +LBL.w : lblSheet().w; if (Code128.modules(v) * 0.25 > w - 4) return t('lblTooLong'); }
   else if (new TextEncoder().encode(v).length > QrCode.maxBytes) return t('lblTooLong');
   return '';
 }
@@ -136,7 +138,9 @@ function renderLabels() {
   const first = DB.get('products', chosen[0]?.[0]) || prods[0];
   return `${pageHead(t('nav_labels'), t('sub_labels'), `<button class="btn primary" data-act="lbl-print" ${total ? '' : 'disabled'}>${icon('printer')}<span>${t('print')} (${fmtNum(total)})</span></button>`)}
     <div class="grid-lbl"><div class="card">
-      <div class="toolbar"><div class="search">${icon('barcode')}<input class="input" id="lbl-q" placeholder="${t('lblSearch')}" value="${esc(LBL.q)}" data-chg="lbl-q"></div>
+      <div class="toolbar"><div class="search">${icon('barcode')}<input class="input" id="lbl-scan" placeholder="${t('lblScanAdd')}" autocomplete="off" dir="ltr"></div>
+        <label class="sel"><span>${t('lblDefaultCopies')}</span><input class="input sm" type="number" min="1" max="500" value="${LBL.copies}" data-chg="lbl-opt" data-k="copies" style="width:76px"></label></div>
+      <div class="toolbar"><div class="search">${icon('search')}<input class="input" id="lbl-q" placeholder="${t('lblSearch')}" value="${esc(LBL.q)}" data-chg="lbl-q"></div>
         <button class="btn ghost sm" data-act="lbl-all">${t('lblSelectShown')}</button><button class="btn ghost sm" data-act="lbl-none">${t('clear')}</button></div>
       <div class="table-wrap"><table class="table compact"><thead><tr><th>${t('f_productId')}</th><th>${t('f_barcode')}</th><th>${t('f_stock')}</th><th>${t('lblCount')}</th><th></th></tr></thead><tbody>
         ${prods.slice(0, 300).map(p => { const prob = labelProblem(p); return `<tr><td>${esc(loc(p))}</td><td class="ltr">${esc(labelValue(p))}</td><td>${fmtNum(Math.max(0, stockOf(p.id)), 3)}</td>
@@ -146,8 +150,10 @@ function renderLabels() {
       <div class="days">${['name', 'price', 'text'].map(k => `<label class="day"><input type="checkbox" data-chg="lbl-opt" data-k="${k}" ${LBL[k] ? 'checked' : ''}><span>${t('lblShow_' + k)}</span></label>`).join('')}</div>
       <label class="field"><span>${t('lblMode')}</span><select class="input" data-chg="lbl-opt" data-k="mode"><option value="roll" ${LBL.mode === 'roll' ? 'selected' : ''}>${t('lblRoll')}</option><option value="sheet" ${LBL.mode === 'sheet' ? 'selected' : ''}>${t('lblSheet')}</option></select></label>
       ${LBL.mode === 'roll' ? `<div class="form-grid"><label class="field"><span>${t('lblWidth')} (mm)</span><input class="input" type="number" min="20" max="120" value="${LBL.w}" data-chg="lbl-opt" data-k="w"></label><label class="field"><span>${t('lblHeight')} (mm)</span><input class="input" type="number" min="15" max="100" value="${LBL.h}" data-chg="lbl-opt" data-k="h"></label></div>`
-      : `<label class="field"><span>${t('lblTemplate')}</span><select class="input" data-chg="lbl-opt" data-k="sheet">${Object.entries(LABEL_SHEETS).map(([k, v]) => `<option value="${k}" ${LBL.sheet === k ? 'selected' : ''}>A4 — ${v.cols * v.rows} (${v.w}×${v.h} mm)</option>`).join('')}</select></label>`}
-      <div class="lbl-preview-wrap"><span class="muted">${t('lblPreview')}</span><div class="lbl-preview" style="--w:${LBL.mode === 'roll' ? LBL.w : LABEL_SHEETS[LBL.sheet].w}mm;--h:${LBL.mode === 'roll' ? LBL.h : LABEL_SHEETS[LBL.sheet].h}mm">${first ? labelHtml(first) : ''}</div></div>
+      : `<label class="field"><span>${t('lblTemplate')}</span><select class="input" data-chg="lbl-opt" data-k="sheet">${Object.entries(LABEL_SHEETS).map(([k, v]) => `<option value="${k}" ${LBL.sheet === k ? 'selected' : ''}>A4 — ${v.cols * v.rows} (${v.w}×${v.h} mm)</option>`).join('')}<option value="custom" ${LBL.sheet === 'custom' ? 'selected' : ''}>${t('lblCustom')}</option></select>
+        ${LBL.sheet === 'custom' ? `<div class="form-grid">${[['ccols', 'lblCols', 1, 12], ['crows', 'lblRows', 1, 40], ['cw', 'lblWidth', 5, 210], ['ch', 'lblHeight', 5, 297], ['cleft', 'lblLeft', 0, 50], ['ctop', 'lblTop', 0, 50], ['cgx', 'lblGapX', 0, 30], ['cgy', 'lblGapY', 0, 30]].map(([k, l, mn, mx]) => `<label class="field"><span>${t(l)}${['ccols', 'crows'].includes(k) ? '' : ' (mm)'}</span><input class="input" type="number" step="any" min="${mn}" max="${mx}" value="${LBL[k]}" data-chg="lbl-opt" data-k="${k}"></label>`).join('')}</div>` : ''}
+        <label class="field"><span>${t('lblStartCell')}</span><input class="input" type="number" min="1" max="${lblSheet().cols * lblSheet().rows}" value="${LBL.start}" data-chg="lbl-opt" data-k="start"></label></label>`}
+      <div class="lbl-preview-wrap"><span class="muted">${t('lblPreview')}</span><div class="lbl-preview" style="--w:${LBL.mode === 'roll' ? LBL.w : lblSheet().w}mm;--h:${LBL.mode === 'roll' ? LBL.h : lblSheet().h}mm">${first ? labelHtml(first) : ''}</div></div>
       <p class="hint">${t('lblHint')}</p></div></div></div>`;
 }
 function labelsPrint() {
@@ -158,10 +164,13 @@ function labelsPrint() {
     css = `@page { size: ${LBL.w}mm ${LBL.h}mm; margin: 0 } .lbl-page { width: ${LBL.w}mm; height: ${LBL.h}mm; page-break-after: always; break-after: page; overflow: hidden; }`;
     body = items.map(p => `<div class="lbl-page">${labelHtml(p)}</div>`).join('');
   } else {
-    const s = LABEL_SHEETS[LBL.sheet]; const mx = (210 - s.cols * s.w) / 2, my = (297 - s.rows * s.h) / 2; const per = s.cols * s.rows; const pages = [];
-    for (let i = 0; i < items.length; i += per) pages.push(items.slice(i, i + per));
-    css = `@page { size: A4; margin: 0 } .lbl-sheet { width: 210mm; height: 297mm; padding: ${my}mm ${mx}mm; display: grid; grid-template-columns: repeat(${s.cols}, ${s.w}mm); grid-auto-rows: ${s.h}mm; direction: ltr; page-break-after: always; break-after: page; } .lbl-sheet > div { overflow: hidden; }`;
-    body = pages.map(pg => `<div class="lbl-sheet">${pg.map(p => `<div>${labelHtml(p)}</div>`).join('')}</div>`).join('');
+    const s = lblSheet(); const per = s.cols * s.rows; const pages = [];
+    const usedW = s.left + s.cols * s.w + (s.cols - 1) * s.gx, usedH = s.top + s.rows * s.h + (s.rows - 1) * s.gy;
+    if (usedW > 210.5 || usedH > 297.5) return toast(`${t('lblTooBig')} (${round(usedW, 1)} × ${round(usedH, 1)} mm)`, 'err');
+    const start = Math.min(per, Math.max(1, Math.round(+LBL.start || 1))); const cells = [...Array(start - 1).fill(null), ...items]; // skip the used cells of a partly used sheet
+    for (let i = 0; i < cells.length; i += per) pages.push(cells.slice(i, i + per));
+    css = `@page { size: A4; margin: 0 } .lbl-sheet { width: 210mm; height: 297mm; padding: ${s.top}mm 0 0 ${s.left}mm; display: grid; grid-template-columns: repeat(${s.cols}, ${s.w}mm); grid-auto-rows: ${s.h}mm; column-gap: ${s.gx}mm; row-gap: ${s.gy}mm; direction: ltr; page-break-after: always; break-after: page; } .lbl-sheet > div { overflow: hidden; }`;
+    body = pages.map(pg => `<div class="lbl-sheet">${pg.map(p => `<div>${p ? labelHtml(p) : ''}</div>`).join('')}</div>`).join('');
   }
   printHTML(`<style>${css}</style><div class="lbl-print">${body}</div>`, 'labels-mode');
 }

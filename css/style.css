@@ -739,3 +739,21 @@ kbd { font-family: inherit; font-size: 11px; padding: 1px 6px; border-radius: 6p
 .rx-tbl td.t { font-weight: 800; }
 .rx-58 .rx-tbl col.c-p, .rx-58 .rx-tbl th:nth-child(3), .rx-58 .rx-tbl td.p { display: none; width: 0; }
 .rx-58 .rx-tbl col.c-q { width: 9mm; } .rx-58 .rx-tbl col.c-t { width: 15mm; }
+/* ---------- 2.4: import wizard, archived invoices, print sizes ---------- */
+.imp { display: grid; gap: 12px; min-height: 320px; }
+.imp-steps { display: flex; gap: 8px; flex-wrap: wrap; } .imp-steps span { padding: 4px 12px; border-radius: 99px; font-size: 12px; border: 1px solid var(--line); color: var(--muted); }
+.imp-steps span.on { background: var(--primary); border-color: var(--primary); color: #fff; } .imp-steps span.done { color: var(--primary); border-color: var(--primary); }
+.imp-drop { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 30px; border: 2px dashed var(--line); border-radius: 14px; cursor: pointer; text-align: center; }
+.imp-drop.over, .imp-drop:hover { border-color: var(--primary); background: var(--primary-soft); } .imp-drop .ic { width: 30px; height: 30px; color: var(--primary); } .imp-drop small { color: var(--muted); }
+.imp-wait { padding: 60px 20px; text-align: center; color: var(--muted); }
+.imp-map { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.2fr) minmax(120px, 1fr); gap: 8px 12px; align-items: center; }
+.imp-ex { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.imp-pv { max-height: 220px; overflow: auto; }
+.imp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; }
+.imp-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px; text-align: center; display: flex; flex-direction: column; gap: 2px; }
+.imp-card b { font-size: 24px; } .imp-card span { font-size: 12px; color: var(--muted); }
+.imp-card.ok b { color: var(--ok); } .imp-card.bad b { color: var(--bad); } .imp-card.warn b { color: var(--warn); } .imp-card.info b { color: var(--info); }
+.badge.b-archived { background: var(--info-soft); color: var(--info); font-size: 10.5px; padding: 1px 7px; }
+.ptable.xs { font-size: 9.5px; } .ptable.xs th, .ptable.xs td { padding: 3px 4px; }
+.ptable tfoot td { font-weight: 800; background: #eef6f2; border-top: 2px solid #999; }
+@media (max-width: 700px) { .imp-map { grid-template-columns: 1fr 1fr; } .imp-map .imp-ex { display: none; } }
